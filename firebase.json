@@ -5,6 +5,10 @@
       {
         "source": "/api/diagnose",
         "function": "diagnose"
+      },
+      {
+        "source": "/api/metrics",
+        "function": "metrics"
       }
     ]
   },

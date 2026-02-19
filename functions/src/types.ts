@@ -47,3 +47,43 @@ export interface AgentResponse {
   reasoning: string;
   warnings: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Eval types
+// ---------------------------------------------------------------------------
+
+export interface EvalTestCase {
+  id: string;
+  name: string;
+  input: string;
+  expectedPartNumber: string | null; // null = no match expected
+  expectedConfidence: "high" | "medium" | "low";
+  mustCallTools: string[];
+  tags: string[];
+}
+
+export interface EvalCaseResult {
+  testCase: EvalTestCase;
+  passed: boolean;
+  partMatch: boolean;
+  confidenceMatch: boolean;
+  toolsCompliant: boolean;
+  actualPartNumber: string | null;
+  actualConfidence: string;
+  actualToolSequence: string[];
+  latencyMs: number;
+  error: string | null;
+}
+
+export interface EvalRunSummary {
+  runId: string;
+  timestamp: string;
+  totalCases: number;
+  passed: number;
+  failed: number;
+  passRate: number;
+  partAccuracy: number;
+  confidenceAccuracy: number;
+  avgLatencyMs: number;
+  results: EvalCaseResult[];
+}
