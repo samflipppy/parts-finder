@@ -1,6 +1,6 @@
 import { genkit, z } from "genkit";
 import { googleAI } from "@genkit-ai/googleai";
-import { getFirestore, Query } from "firebase-admin/firestore";
+import { getFirestore, Query, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import type { Part, Supplier, AgentResponse } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ const searchParts = ai.defineTool(
 
     const snapshot = await query.get();
     let results: Part[] = snapshot.docs.map(
-      (doc: FirebaseFirestore.QueryDocumentSnapshot) => doc.data() as Part
+      (doc: QueryDocumentSnapshot) => doc.data() as Part
     );
 
     console.log(
