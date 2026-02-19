@@ -28,6 +28,8 @@
   var warningsSection = document.getElementById("warnings-section");
   var warningsList = document.getElementById("warnings-list");
   var reasoningTrace = document.getElementById("reasoning-trace");
+  var metricsSection = document.getElementById("metrics-section");
+  var metricsContent = document.getElementById("metrics-content");
 
   // API endpoint — when served via Firebase Hosting rewrites, this maps to the Cloud Function
   var API_URL = "/api/diagnose";
@@ -162,11 +164,59 @@
       warningsSection.classList.add("hidden");
     }
 
+    // Performance metrics
+    if (data._metrics) {
+      metricsSection.classList.remove("hidden");
+      renderMetrics(data._metrics);
+    } else {
+      metricsSection.classList.add("hidden");
+    }
+
     // Reasoning trace
     reasoningTrace.textContent = data.reasoning || "No reasoning trace available.";
 
     resultsSection.classList.remove("hidden");
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ---- Metrics rendering ----
+
+  function renderMetrics(m) {
+    var html =
+      '<div class="metric-card">' +
+        '<span class="metric-value">' + (m.totalLatencyMs / 1000).toFixed(1) + 's</span>' +
+        '<span class="metric-label">Total Latency</span>' +
+      '</div>' +
+      '<div class="metric-card">' +
+        '<span class="metric-value">' + m.totalToolCalls + '</span>' +
+        '<span class="metric-label">Tool Calls</span>' +
+      '</div>' +
+      '<div class="metric-card">' +
+        '<span class="metric-value">' + (m.avgToolLatencyMs) + 'ms</span>' +
+        '<span class="metric-label">Avg Tool Latency</span>' +
+      '</div>' +
+      '<div class="metric-card">' +
+        '<span class="metric-value">' + (m.partFound ? "Yes" : "No") + '</span>' +
+        '<span class="metric-label">Part Found</span>' +
+      '</div>';
+
+    // Tool call timeline
+    if (m.toolCalls && m.toolCalls.length > 0) {
+      html += '<div class="metric-timeline">';
+      html += '<span class="metric-label">Tool Call Sequence:</span>';
+      html += '<div class="timeline-items">';
+      m.toolCalls.forEach(function (tc, idx) {
+        html +=
+          '<div class="timeline-item">' +
+            '<span class="timeline-step">' + (idx + 1) + '</span>' +
+            '<span class="timeline-name">' + escapeHtml(tc.toolName) + '</span>' +
+            '<span class="timeline-detail">' + tc.resultCount + ' results, ' + tc.latencyMs + 'ms</span>' +
+          '</div>';
+      });
+      html += '</div></div>';
+    }
+
+    metricsContent.innerHTML = html;
   }
 
   // ---- Helpers ----

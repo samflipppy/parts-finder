@@ -2,6 +2,13 @@ import { genkit, z } from "genkit";
 import { googleAI } from "@genkit-ai/googleai";
 import { getFirestore, Query, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import type { Part, Supplier, AgentResponse } from "./types";
+import {
+  MetricsCollector,
+  setActiveCollector,
+  getActiveCollector,
+  saveMetrics,
+  type RequestMetrics,
+} from "./metrics";
 
 // ---------------------------------------------------------------------------
 // Genkit instance
@@ -73,7 +80,7 @@ const AgentResponseSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Tool 1: searchParts
+// Tool 1: searchParts (instrumented)
 // ---------------------------------------------------------------------------
 
 const searchParts = ai.defineTool(
@@ -110,6 +117,7 @@ const searchParts = ai.defineTool(
     outputSchema: z.array(PartSchema),
   },
   async (input) => {
+    const startTime = Date.now();
     const db = getFirestore();
     console.log("[searchParts] Query params:", JSON.stringify(input));
 
@@ -160,15 +168,28 @@ const searchParts = ai.defineTool(
       );
     }
 
+    const latencyMs = Date.now() - startTime;
     console.log(
-      `[searchParts] Returning ${results.length} parts after all filters`
+      `[searchParts] Returning ${results.length} parts after all filters (${latencyMs}ms)`
     );
+
+    // Record metrics if a collector is active
+    const collector = getActiveCollector();
+    if (collector) {
+      collector.recordToolCall(
+        "searchParts",
+        input as Record<string, unknown>,
+        results.length,
+        latencyMs
+      );
+    }
+
     return results;
   }
 );
 
 // ---------------------------------------------------------------------------
-// Tool 2: getSuppliers
+// Tool 2: getSuppliers (instrumented)
 // ---------------------------------------------------------------------------
 
 const getSuppliers = ai.defineTool(
@@ -185,6 +206,7 @@ const getSuppliers = ai.defineTool(
     outputSchema: z.array(SupplierSchema),
   },
   async (input) => {
+    const startTime = Date.now();
     const db = getFirestore();
     console.log("[getSuppliers] Fetching suppliers:", input.supplierIds);
 
@@ -198,7 +220,22 @@ const getSuppliers = ai.defineTool(
       }
     }
 
-    console.log(`[getSuppliers] Returning ${suppliers.length} suppliers`);
+    const latencyMs = Date.now() - startTime;
+    console.log(
+      `[getSuppliers] Returning ${suppliers.length} suppliers (${latencyMs}ms)`
+    );
+
+    // Record metrics if a collector is active
+    const collector = getActiveCollector();
+    if (collector) {
+      collector.recordToolCall(
+        "getSuppliers",
+        input as Record<string, unknown>,
+        suppliers.length,
+        latencyMs
+      );
+    }
+
     return suppliers;
   }
 );
@@ -269,3 +306,26 @@ export const diagnoseAndRecommend = ai.defineFlow(
     return result;
   }
 );
+
+// ---------------------------------------------------------------------------
+// Instrumented wrapper — runs the flow with metrics collection
+// ---------------------------------------------------------------------------
+
+export async function diagnoseWithMetrics(
+  description: string
+): Promise<{ response: AgentResponse; metrics: RequestMetrics }> {
+  const collector = new MetricsCollector();
+  setActiveCollector(collector);
+
+  try {
+    const response = await diagnoseAndRecommend(description);
+    const metrics = collector.finalize(description, response);
+
+    // Persist metrics asynchronously (non-blocking)
+    saveMetrics(metrics).catch(() => {});
+
+    return { response, metrics };
+  } finally {
+    setActiveCollector(null);
+  }
+}
