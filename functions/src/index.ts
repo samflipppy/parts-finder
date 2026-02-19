@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 import { onRequest } from "firebase-functions/v2/https";
 import { diagnoseWithMetrics } from "./agent";
 import { getRecentMetrics, aggregateMetrics } from "./metrics";
@@ -98,6 +99,32 @@ export const metrics = onRequest(
         error: "Failed to fetch metrics.",
         detail: message,
       });
+    }
+  }
+);
+
+/**
+ * GET /api/debug — temporary endpoint to verify Firestore connectivity.
+ * Returns parts count and first part name. Remove after debugging.
+ */
+export const debug = onRequest(
+  { cors: true, timeoutSeconds: 30 },
+  async (req, res) => {
+    try {
+      const db = getFirestore();
+      const partsSnap = await db.collection("parts").get();
+      const suppSnap = await db.collection("suppliers").get();
+      const firstPart = partsSnap.docs[0]?.data();
+      res.status(200).json({
+        partsCount: partsSnap.size,
+        suppliersCount: suppSnap.size,
+        firstPart: firstPart
+          ? { name: firstPart.name, manufacturer: firstPart.manufacturer }
+          : null,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      res.status(500).json({ error: message });
     }
   }
 );
