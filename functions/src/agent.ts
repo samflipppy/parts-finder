@@ -138,6 +138,7 @@ const searchParts = ai.defineTool(
       results = results.filter(
         (part) => part.category.toLowerCase() === searchTerm
       );
+      console.log(`[searchParts] After category="${input.category}": ${results.length} remaining`);
     }
 
     if (input.manufacturer) {
@@ -145,6 +146,7 @@ const searchParts = ai.defineTool(
       results = results.filter(
         (part) => part.manufacturer.toLowerCase() === searchTerm
       );
+      console.log(`[searchParts] After manufacturer="${input.manufacturer}": ${results.length} remaining`);
     }
 
     if (input.equipmentName) {
@@ -154,6 +156,7 @@ const searchParts = ai.defineTool(
           eq.toLowerCase().includes(searchTerm)
         )
       );
+      console.log(`[searchParts] After equipmentName="${input.equipmentName}": ${results.length} remaining`);
     }
 
     if (input.errorCode) {
@@ -163,6 +166,7 @@ const searchParts = ai.defineTool(
           code.toLowerCase().includes(searchTerm)
         )
       );
+      console.log(`[searchParts] After errorCode="${input.errorCode}": ${results.length} remaining`);
     }
 
     if (input.symptom) {
@@ -172,6 +176,7 @@ const searchParts = ai.defineTool(
           part.description.toLowerCase().includes(searchTerm) ||
           part.name.toLowerCase().includes(searchTerm)
       );
+      console.log(`[searchParts] After symptom="${input.symptom}": ${results.length} remaining`);
     }
 
     const latencyMs = Date.now() - startTime;
