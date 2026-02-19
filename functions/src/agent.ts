@@ -1,6 +1,6 @@
 import { genkit, z } from "genkit";
 import { googleAI } from "@genkit-ai/googleai";
-import { getFirestore, Query, QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { getFirestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import type { Part, Supplier, AgentResponse } from "./types";
 import {
   MetricsCollector,
@@ -121,23 +121,25 @@ const searchParts = ai.defineTool(
     const db = getFirestore();
     console.log("[searchParts] Query params:", JSON.stringify(input));
 
-    let query: Query = db.collection("parts");
-
-    // Apply Firestore where() filter for category (exact, controlled vocabulary)
-    if (input.category) {
-      query = query.where("category", "==", input.category);
-    }
-
-    const snapshot = await query.get();
+    // Fetch all parts — only 28 docs, so in-memory filtering is fast and
+    // avoids case-sensitivity issues with Firestore where() queries.
+    const snapshot = await db.collection("parts").get();
     let results: Part[] = snapshot.docs.map(
       (doc: QueryDocumentSnapshot) => doc.data() as Part
     );
 
     console.log(
-      `[searchParts] Firestore returned ${results.length} docs after where() filters`
+      `[searchParts] Firestore returned ${results.length} docs`
     );
 
-    // In-memory filters (case-insensitive) for manufacturer and array/text fields
+    // All filters are case-insensitive in-memory
+    if (input.category) {
+      const searchTerm = input.category.toLowerCase();
+      results = results.filter(
+        (part) => part.category.toLowerCase() === searchTerm
+      );
+    }
+
     if (input.manufacturer) {
       const searchTerm = input.manufacturer.toLowerCase();
       results = results.filter(
