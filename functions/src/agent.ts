@@ -1,6 +1,6 @@
 import { genkit, z } from "genkit";
 import { googleAI } from "@genkit-ai/googleai";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, Query } from "firebase-admin/firestore";
 import type { Part, Supplier, AgentResponse } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ const searchParts = ai.defineTool(
     const db = getFirestore();
     console.log("[searchParts] Query params:", JSON.stringify(input));
 
-    let query: FirebaseFirestore.Query = db.collection("parts");
+    let query: Query = db.collection("parts");
 
     // Apply Firestore where() filters for manufacturer and category
     if (input.manufacturer) {
@@ -125,7 +125,7 @@ const searchParts = ai.defineTool(
 
     const snapshot = await query.get();
     let results: Part[] = snapshot.docs.map(
-      (doc) => doc.data() as Part
+      (doc: FirebaseFirestore.QueryDocumentSnapshot) => doc.data() as Part
     );
 
     console.log(
