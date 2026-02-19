@@ -13,7 +13,7 @@
     "lint": "eslint src/"
   },
   "engines": {
-    "node": ">=18"
+    "node": "22"
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.0.0",
