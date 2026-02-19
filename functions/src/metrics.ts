@@ -13,12 +13,19 @@ import type { AgentResponse } from "./types";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface FilterStep {
+  filter: string;   // e.g. "category", "manufacturer"
+  value: string;    // the search term Gemini sent
+  remaining: number; // how many results survived this filter
+}
+
 export interface ToolCallMetric {
   toolName: string;
   input: Record<string, unknown>;
   resultCount: number;
   latencyMs: number;
   timestamp: string;
+  filterSteps?: FilterStep[]; // per-filter narrowing trace (searchParts only)
 }
 
 export interface RequestMetrics {
@@ -77,7 +84,8 @@ export class MetricsCollector {
     toolName: string,
     input: Record<string, unknown>,
     resultCount: number,
-    latencyMs: number
+    latencyMs: number,
+    filterSteps?: FilterStep[]
   ): void {
     this.toolCalls.push({
       toolName,
@@ -85,6 +93,7 @@ export class MetricsCollector {
       resultCount,
       latencyMs,
       timestamp: new Date().toISOString(),
+      filterSteps,
     });
 
     console.log(
