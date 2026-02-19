@@ -123,10 +123,7 @@ const searchParts = ai.defineTool(
 
     let query: Query = db.collection("parts");
 
-    // Apply Firestore where() filters for manufacturer and category
-    if (input.manufacturer) {
-      query = query.where("manufacturer", "==", input.manufacturer);
-    }
+    // Apply Firestore where() filter for category (exact, controlled vocabulary)
     if (input.category) {
       query = query.where("category", "==", input.category);
     }
@@ -140,7 +137,14 @@ const searchParts = ai.defineTool(
       `[searchParts] Firestore returned ${results.length} docs after where() filters`
     );
 
-    // In-memory filters for array/text fields
+    // In-memory filters (case-insensitive) for manufacturer and array/text fields
+    if (input.manufacturer) {
+      const searchTerm = input.manufacturer.toLowerCase();
+      results = results.filter(
+        (part) => part.manufacturer.toLowerCase() === searchTerm
+      );
+    }
+
     if (input.equipmentName) {
       const searchTerm = input.equipmentName.toLowerCase();
       results = results.filter((part) =>
