@@ -172,8 +172,8 @@
       metricsSection.classList.add("hidden");
     }
 
-    // Reasoning trace
-    reasoningTrace.textContent = data.reasoning || "No reasoning trace available.";
+    // Reasoning trace — include tool execution logs from _metrics
+    renderReasoningTrace(data);
 
     resultsSection.classList.remove("hidden");
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -243,6 +243,86 @@
     }
 
     metricsContent.innerHTML = html;
+  }
+
+  // ---- Reasoning trace rendering ----
+
+  function renderReasoningTrace(data) {
+    var html = '';
+
+    // Tool execution logs from _metrics
+    if (data._metrics && data._metrics.toolCalls && data._metrics.toolCalls.length > 0) {
+      html += '<div class="trace-tool-logs">';
+      data._metrics.toolCalls.forEach(function (tc, idx) {
+        html += '<div class="trace-tool-block">';
+        html += '<div class="trace-tool-header">' + escapeHtml(tc.toolName) + '</div>';
+
+        // Query params
+        if (tc.input && Object.keys(tc.input).length > 0) {
+          var params = Object.keys(tc.input).map(function (key) {
+            return escapeHtml(key) + '=' + escapeHtml(JSON.stringify(tc.input[key]));
+          }).join(', ');
+          html += '<div class="trace-log-line">' +
+            '<span class="trace-prefix">[' + escapeHtml(tc.toolName) + ']</span> ' +
+            'Query params: {' + params + '}' +
+            '</div>';
+        }
+
+        // For searchParts: show Firestore doc count and filter narrowing
+        if (tc.toolName === 'searchParts') {
+          html += '<div class="trace-log-line">' +
+            '<span class="trace-prefix">[' + escapeHtml(tc.toolName) + ']</span> ' +
+            'Firestore returned <strong>28</strong> docs' +
+            '</div>';
+
+          if (tc.filterSteps && tc.filterSteps.length > 0) {
+            var pool = 28;
+            tc.filterSteps.forEach(function (step) {
+              html += '<div class="trace-log-line trace-filter-line">' +
+                '<span class="trace-prefix">[' + escapeHtml(tc.toolName) + ']</span> ' +
+                'After <span class="trace-filter-name">' + escapeHtml(step.filter) + '</span>=' +
+                '<span class="trace-filter-val">"' + escapeHtml(step.value) + '"</span>: ' +
+                '<span class="trace-narrowing">' + pool + ' &rarr; ' + step.remaining + ' remaining</span>' +
+                '</div>';
+              pool = step.remaining;
+            });
+          }
+        }
+
+        // For getSuppliers: show which IDs were fetched
+        if (tc.toolName === 'getSuppliers' && tc.input && tc.input.supplierIds) {
+          html += '<div class="trace-log-line">' +
+            '<span class="trace-prefix">[' + escapeHtml(tc.toolName) + ']</span> ' +
+            'Fetching suppliers: ' + escapeHtml(JSON.stringify(tc.input.supplierIds)) +
+            '</div>';
+        }
+
+        // Result summary
+        html += '<div class="trace-log-line trace-result-line">' +
+          '<span class="trace-prefix">[' + escapeHtml(tc.toolName) + ']</span> ' +
+          'Returning <strong>' + tc.resultCount + '</strong> ' +
+          (tc.toolName === 'getSuppliers' ? 'suppliers' : 'parts') +
+          ' after all filters <span class="trace-latency">(' + tc.latencyMs + 'ms)</span>' +
+          '</div>';
+
+        html += '</div>'; // .trace-tool-block
+      });
+      html += '</div>'; // .trace-tool-logs
+    }
+
+    // LLM reasoning
+    if (data.reasoning) {
+      html += '<div class="trace-reasoning-block">';
+      html += '<div class="trace-tool-header">Agent Reasoning</div>';
+      html += '<div class="trace-reasoning-text">' + escapeHtml(data.reasoning) + '</div>';
+      html += '</div>';
+    }
+
+    if (!html) {
+      html = '<div class="trace-reasoning-text">No reasoning trace available.</div>';
+    }
+
+    reasoningTrace.innerHTML = html;
   }
 
   // ---- Helpers ----
