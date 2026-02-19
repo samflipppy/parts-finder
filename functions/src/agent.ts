@@ -7,6 +7,7 @@ import {
   setActiveCollector,
   getActiveCollector,
   saveMetrics,
+  type FilterStep,
   type RequestMetrics,
 } from "./metrics";
 
@@ -132,13 +133,16 @@ const searchParts = ai.defineTool(
       `[searchParts] Firestore returned ${results.length} docs`
     );
 
-    // All filters are case-insensitive in-memory
+    // All filters are case-insensitive in-memory.
+    // Track how each filter narrows results for the reasoning trace.
+    const filterSteps: FilterStep[] = [];
+
     if (input.category) {
       const searchTerm = input.category.toLowerCase();
       results = results.filter(
         (part) => part.category.toLowerCase() === searchTerm
       );
-      console.log(`[searchParts] After category="${input.category}": ${results.length} remaining`);
+      filterSteps.push({ filter: "category", value: input.category, remaining: results.length });
     }
 
     if (input.manufacturer) {
@@ -146,7 +150,7 @@ const searchParts = ai.defineTool(
       results = results.filter(
         (part) => part.manufacturer.toLowerCase() === searchTerm
       );
-      console.log(`[searchParts] After manufacturer="${input.manufacturer}": ${results.length} remaining`);
+      filterSteps.push({ filter: "manufacturer", value: input.manufacturer, remaining: results.length });
     }
 
     if (input.equipmentName) {
@@ -156,7 +160,7 @@ const searchParts = ai.defineTool(
           eq.toLowerCase().includes(searchTerm)
         )
       );
-      console.log(`[searchParts] After equipmentName="${input.equipmentName}": ${results.length} remaining`);
+      filterSteps.push({ filter: "equipmentName", value: input.equipmentName, remaining: results.length });
     }
 
     if (input.errorCode) {
@@ -166,7 +170,7 @@ const searchParts = ai.defineTool(
           code.toLowerCase().includes(searchTerm)
         )
       );
-      console.log(`[searchParts] After errorCode="${input.errorCode}": ${results.length} remaining`);
+      filterSteps.push({ filter: "errorCode", value: input.errorCode, remaining: results.length });
     }
 
     if (input.symptom) {
@@ -176,7 +180,7 @@ const searchParts = ai.defineTool(
           part.description.toLowerCase().includes(searchTerm) ||
           part.name.toLowerCase().includes(searchTerm)
       );
-      console.log(`[searchParts] After symptom="${input.symptom}": ${results.length} remaining`);
+      filterSteps.push({ filter: "symptom", value: input.symptom, remaining: results.length });
     }
 
     const latencyMs = Date.now() - startTime;
@@ -191,7 +195,8 @@ const searchParts = ai.defineTool(
         "searchParts",
         input as Record<string, unknown>,
         results.length,
-        latencyMs
+        latencyMs,
+        filterSteps
       );
     }
 

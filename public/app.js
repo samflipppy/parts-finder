@@ -200,7 +200,7 @@
         '<span class="metric-label">Part Found</span>' +
       '</div>';
 
-    // Tool call timeline
+    // Tool call timeline with search params and filter trace
     if (m.toolCalls && m.toolCalls.length > 0) {
       html += '<div class="metric-timeline">';
       html += '<span class="metric-label">Tool Call Sequence:</span>';
@@ -210,8 +210,34 @@
           '<div class="timeline-item">' +
             '<span class="timeline-step">' + (idx + 1) + '</span>' +
             '<span class="timeline-name">' + escapeHtml(tc.toolName) + '</span>' +
-            '<span class="timeline-detail">' + tc.resultCount + ' results, ' + tc.latencyMs + 'ms</span>' +
-          '</div>';
+            '<span class="timeline-detail">' + tc.resultCount + ' results, ' + tc.latencyMs + 'ms</span>';
+
+        // Show search params sent by the LLM
+        if (tc.input && Object.keys(tc.input).length > 0) {
+          html += '<div class="timeline-params">';
+          Object.keys(tc.input).forEach(function (key) {
+            html += '<span class="param-chip">' + escapeHtml(key) + ': ' + escapeHtml(String(tc.input[key])) + '</span>';
+          });
+          html += '</div>';
+        }
+
+        // Show per-filter narrowing trace
+        if (tc.filterSteps && tc.filterSteps.length > 0) {
+          html += '<div class="timeline-filters">';
+          var totalDocs = 28; // starting pool
+          tc.filterSteps.forEach(function (step) {
+            var before = totalDocs;
+            html +=
+              '<span class="filter-step">' +
+                escapeHtml(step.filter) + '="' + escapeHtml(step.value) + '"' +
+                ' <span class="filter-count">' + before + ' &rarr; ' + step.remaining + '</span>' +
+              '</span>';
+            totalDocs = step.remaining;
+          });
+          html += '</div>';
+        }
+
+        html += '</div>';
       });
       html += '</div></div>';
     }
