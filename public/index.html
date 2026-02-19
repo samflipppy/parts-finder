@@ -49,6 +49,12 @@
         <p id="diagnosis-text"></p>
       </div>
 
+      <!-- Performance Metrics (shown right after diagnosis for visibility) -->
+      <details id="metrics-section" class="trace-section hidden" open>
+        <summary>Performance Metrics</summary>
+        <div id="metrics-content" class="metrics-grid"></div>
+      </details>
+
       <!-- Recommended Part Card -->
       <div id="recommended-part-card" class="card">
         <h2>Recommended Part</h2>
@@ -112,12 +118,6 @@
         <h2>Warnings</h2>
         <div id="warnings-list"></div>
       </div>
-
-      <!-- Performance Metrics -->
-      <details id="metrics-section" class="trace-section hidden">
-        <summary>Performance Metrics</summary>
-        <div id="metrics-content" class="metrics-grid"></div>
-      </details>
 
       <!-- Agent Reasoning Trace -->
       <details class="trace-section">
