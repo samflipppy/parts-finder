@@ -98,7 +98,11 @@ function buildEmbeddingText(
  * Returns a 768-dimensional vector.
  */
 async function embedText(text: string): Promise<number[]> {
-  const model = genai.getGenerativeModel({ model: "text-embedding-004" });
+  // Force apiVersion "v1" — the default "v1beta" doesn't list text-embedding-004
+  const model = genai.getGenerativeModel(
+    { model: "text-embedding-004" },
+    { apiVersion: "v1" }
+  );
   const result = await model.embedContent(text);
   return result.embedding.values;
 }
