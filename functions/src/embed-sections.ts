@@ -34,6 +34,7 @@ import type { ServiceManual, ManualSpecification, SectionEmbedding } from "./typ
 // Initialize Firebase
 initializeApp();
 const db = getFirestore();
+db.settings({ ignoreUndefinedProperties: true });
 
 // Initialize the Gemini API client for embeddings.
 // We use the raw SDK here (not Genkit) because this is a standalone script.
