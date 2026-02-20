@@ -1,7 +1,7 @@
 import { genkit, z } from "genkit";
 import { googleAI } from "@genkit-ai/googleai";
 import { getFirestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
-import type { Part, Supplier, RepairGuide, AgentResponse } from "./types";
+import type { Part, Supplier, RepairGuide, AgentResponse, ServiceManual, ChatMessage, ChatAgentResponse } from "./types";
 import {
   MetricsCollector,
   setActiveCollector,
@@ -411,6 +411,486 @@ export async function diagnoseWithMetrics(
     const metrics = collector.finalize(description, response);
 
     // Persist metrics asynchronously (non-blocking)
+    saveMetrics(metrics).catch(() => {});
+
+    return { response, metrics };
+  } finally {
+    setActiveCollector(null);
+  }
+}
+
+// ===========================================================================
+// V2: Diagnostic Partner — multi-turn chat with manual context & photo input
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// V2 Zod schemas
+// ---------------------------------------------------------------------------
+
+const ManualReferenceSchema = z.object({
+  manualId: z.string(),
+  sectionId: z.string(),
+  sectionTitle: z.string(),
+  quotedText: z.string(),
+  pageHint: z.string().optional(),
+});
+
+const ChatAgentResponseSchema = z.object({
+  type: z.enum(["diagnosis", "clarification", "guidance", "photo_analysis"]),
+  message: z.string(),
+  manualReferences: z.array(ManualReferenceSchema),
+  diagnosis: z.string().nullable(),
+  recommendedPart: z
+    .object({
+      name: z.string(),
+      partNumber: z.string(),
+      description: z.string(),
+      avgPrice: z.number(),
+      criticality: z.string(),
+    })
+    .nullable(),
+  repairGuide: z
+    .object({
+      title: z.string(),
+      estimatedTime: z.string(),
+      difficulty: z.string(),
+      safetyWarnings: z.array(z.string()),
+      steps: z.array(z.string()),
+      tools: z.array(z.string()),
+    })
+    .nullable(),
+  supplierRanking: z.array(
+    z.object({
+      supplierName: z.string(),
+      qualityScore: z.number(),
+      deliveryDays: z.number(),
+      reasoning: z.string(),
+    })
+  ),
+  alternativeParts: z.array(
+    z.object({
+      name: z.string(),
+      partNumber: z.string(),
+      reason: z.string(),
+    })
+  ),
+  confidence: z.enum(["high", "medium", "low"]).nullable(),
+  reasoning: z.string(),
+  warnings: z.array(z.string()),
+});
+
+// ---------------------------------------------------------------------------
+// V2 Tool: searchManual
+// ---------------------------------------------------------------------------
+
+const ManualSectionResultSchema = z.object({
+  manualId: z.string(),
+  manualTitle: z.string(),
+  sectionId: z.string(),
+  sectionTitle: z.string(),
+  content: z.string(),
+  specifications: z
+    .array(
+      z.object({
+        parameter: z.string(),
+        value: z.string(),
+        tolerance: z.string().optional(),
+        unit: z.string(),
+      })
+    )
+    .optional(),
+  warnings: z.array(z.string()).optional(),
+  steps: z.array(z.string()).optional(),
+  tools: z.array(z.string()).optional(),
+});
+
+const searchManual = ai.defineTool(
+  {
+    name: "searchManual",
+    description:
+      "Search service manuals for sections relevant to a specific equipment model, topic, or keyword. " +
+      "Returns matching manual sections with their full content, specifications, and warnings. " +
+      "Use this to find the exact manual reference for a technician's question.",
+    inputSchema: z.object({
+      manufacturer: z
+        .string()
+        .optional()
+        .describe("Equipment manufacturer, e.g. Drager, Philips, GE, Zoll"),
+      equipmentName: z
+        .string()
+        .optional()
+        .describe("Equipment model name, e.g. Evita V500, IntelliVue MX800"),
+      keyword: z
+        .string()
+        .optional()
+        .describe("Search keyword or topic, e.g. fan module, calibration, error 57, clearance, bearing"),
+    }),
+    outputSchema: z.array(ManualSectionResultSchema),
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+    console.log("[searchManual] Query params:", JSON.stringify(input));
+
+    const snapshot = await db.collection("service_manuals").get();
+    let manuals: ServiceManual[] = snapshot.docs.map(
+      (doc: QueryDocumentSnapshot) => doc.data() as ServiceManual
+    );
+
+    console.log(`[searchManual] Loaded ${manuals.length} manuals`);
+
+    // Filter manuals by manufacturer/equipment
+    if (input.manufacturer) {
+      const term = input.manufacturer.toLowerCase();
+      manuals = manuals.filter(
+        (m) => m.manufacturer.toLowerCase() === term
+      );
+    }
+
+    if (input.equipmentName) {
+      const term = input.equipmentName.toLowerCase();
+      manuals = manuals.filter(
+        (m) =>
+          m.equipmentName.toLowerCase().includes(term) ||
+          m.compatibleModels.some((model) =>
+            model.toLowerCase().includes(term)
+          )
+      );
+    }
+
+    // Search through sections for keyword matches
+    type SectionResult = z.infer<typeof ManualSectionResultSchema>;
+    const results: SectionResult[] = [];
+
+    for (const manual of manuals) {
+      for (const section of manual.sections) {
+        let matches = !input.keyword; // if no keyword, include all sections from matched manuals
+
+        if (input.keyword) {
+          const kw = input.keyword.toLowerCase();
+          matches =
+            section.title.toLowerCase().includes(kw) ||
+            section.content.toLowerCase().includes(kw) ||
+            (section.steps?.some((s) => s.toLowerCase().includes(kw)) ?? false) ||
+            (section.specifications?.some(
+              (spec) =>
+                spec.parameter.toLowerCase().includes(kw) ||
+                spec.value.toLowerCase().includes(kw)
+            ) ?? false) ||
+            (section.warnings?.some((w) => w.toLowerCase().includes(kw)) ?? false);
+        }
+
+        if (matches) {
+          results.push({
+            manualId: manual.manualId,
+            manualTitle: manual.title,
+            sectionId: section.sectionId,
+            sectionTitle: section.title,
+            content: section.content,
+            specifications: section.specifications,
+            warnings: section.warnings,
+            steps: section.steps,
+            tools: section.tools,
+          });
+        }
+      }
+    }
+
+    const latencyMs = Date.now() - startTime;
+    console.log(
+      `[searchManual] Returning ${results.length} sections (${latencyMs}ms)`
+    );
+
+    const collector = getActiveCollector();
+    if (collector) {
+      collector.recordToolCall(
+        "searchManual",
+        input as Record<string, unknown>,
+        results.length,
+        latencyMs
+      );
+    }
+
+    return results;
+  }
+);
+
+// ---------------------------------------------------------------------------
+// V2 Tool: getManualSection
+// ---------------------------------------------------------------------------
+
+const getManualSection = ai.defineTool(
+  {
+    name: "getManualSection",
+    description:
+      "Fetch a specific section of a service manual by manual ID and section ID. " +
+      "Use this to retrieve the exact text of a known section for quoting to the technician.",
+    inputSchema: z.object({
+      manualId: z
+        .string()
+        .describe("The manual document ID, e.g. 'manual_evita_v500'"),
+      sectionId: z
+        .string()
+        .describe("The section ID within the manual, e.g. 'ev500_3_7'"),
+    }),
+    outputSchema: ManualSectionResultSchema.nullable(),
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+    console.log(
+      `[getManualSection] Fetching ${input.manualId} > ${input.sectionId}`
+    );
+
+    const doc = await db
+      .collection("service_manuals")
+      .doc(input.manualId)
+      .get();
+
+    const latencyMs = Date.now() - startTime;
+
+    if (!doc.exists) {
+      console.log(
+        `[getManualSection] Manual ${input.manualId} not found (${latencyMs}ms)`
+      );
+      const collector = getActiveCollector();
+      if (collector) {
+        collector.recordToolCall(
+          "getManualSection",
+          input as Record<string, unknown>,
+          0,
+          latencyMs
+        );
+      }
+      return null;
+    }
+
+    const manual = doc.data() as ServiceManual;
+    const section = manual.sections.find(
+      (s) => s.sectionId === input.sectionId
+    );
+
+    if (!section) {
+      console.log(
+        `[getManualSection] Section ${input.sectionId} not found in ${input.manualId} (${latencyMs}ms)`
+      );
+      const collector = getActiveCollector();
+      if (collector) {
+        collector.recordToolCall(
+          "getManualSection",
+          input as Record<string, unknown>,
+          0,
+          latencyMs
+        );
+      }
+      return null;
+    }
+
+    console.log(
+      `[getManualSection] Found "${section.title}" (${latencyMs}ms)`
+    );
+
+    const collector = getActiveCollector();
+    if (collector) {
+      collector.recordToolCall(
+        "getManualSection",
+        input as Record<string, unknown>,
+        1,
+        latencyMs
+      );
+    }
+
+    return {
+      manualId: manual.manualId,
+      manualTitle: manual.title,
+      sectionId: section.sectionId,
+      sectionTitle: section.title,
+      content: section.content,
+      specifications: section.specifications,
+      warnings: section.warnings,
+      steps: section.steps,
+      tools: section.tools,
+    };
+  }
+);
+
+// ---------------------------------------------------------------------------
+// V2 System prompt — Diagnostic Partner
+// ---------------------------------------------------------------------------
+
+const CHAT_SYSTEM_PROMPT = `You are a diagnostic partner for hospital biomedical technicians — like a knowledgeable colleague looking over their shoulder during equipment repairs. You have access to service manuals, parts databases, and supplier information.
+
+YOUR ROLE:
+You supplement the technician's thinking. You don't replace their judgment. The technician is always the decision-maker.
+
+TOOLS AVAILABLE:
+- searchManual: Search service manuals for relevant sections by equipment, topic, or keyword
+- getManualSection: Fetch a specific manual section for detailed reference
+- searchParts: Search the parts database for replacement parts
+- getSuppliers: Get supplier quality/delivery data for procurement
+- getRepairGuide: Get step-by-step repair guides for specific parts
+
+HOW TO RESPOND:
+
+1. FOR EQUIPMENT PROBLEMS / INITIAL DIAGNOSIS:
+   - Use searchParts to identify the likely part
+   - Use searchManual to find the relevant service manual sections
+   - Use getSuppliers and getRepairGuide as needed
+   - Set type to "diagnosis"
+   - Provide the full diagnosis with parts, suppliers, and manual references
+
+2. FOR QUESTIONS DURING A REPAIR (technician is mid-procedure):
+   - Use searchManual to find the specific manual section relevant to their question
+   - QUOTE the manual directly — use the exact text from the manual content
+   - Reference the section: "Per [manual title], Section [sectionTitle]:"
+   - If there are specifications or tolerances, quote them exactly
+   - Set type to "guidance"
+
+3. FOR PHOTOS (when the technician shares an image):
+   - Describe what you observe in the image factually
+   - NEVER say "that looks fine" or "that's acceptable" — you don't make that call
+   - Instead, pull the relevant specification from the manual and let the tech compare
+   - Example: "I can see scoring on the bearing surface. The manual specifies [exact spec]. You'll want to measure this to check if it's within tolerance."
+   - Set type to "photo_analysis"
+
+4. FOR VAGUE OR INCOMPLETE INFORMATION:
+   - Ask a specific, targeted follow-up question
+   - Explain WHY you need the information (what it helps you narrow down)
+   - Set type to "clarification"
+
+CRITICAL SAFETY RULES:
+- ALWAYS quote the manual text exactly. Do not paraphrase or reinterpret specifications.
+- ALWAYS include the manual section reference (manualId, sectionId, sectionTitle) in manualReferences so the tech can verify.
+- NEVER tell a technician something is safe, acceptable, or within spec. Present the spec and let them decide.
+- NEVER skip safety warnings. If the manual section has warnings, include them.
+- When you're not confident, say so explicitly: "I'm not confident about this — I'd recommend checking with your supervisor or the manufacturer's technical support line."
+- For critical/high-criticality equipment, always remind the tech to verify compatibility before ordering parts.
+
+RESPONSE FORMAT:
+- message: Your main response text. Write naturally, as a colleague would speak.
+- manualReferences: Array of exact quotes from the manual with section references. EVERY factual claim must have a manual reference.
+- type: "diagnosis" | "clarification" | "guidance" | "photo_analysis"
+- diagnosis, recommendedPart, supplierRanking, etc.: Populate these for diagnosis-type responses. Set to null/empty for guidance and clarification.
+- warnings: Always include relevant safety warnings from the manual.
+- confidence: Your confidence in the response. Set to null for clarifications.
+
+Remember: You're the second pair of eyes, not the decision-maker. Quote the book, show the spec, flag the risk — the technician does the rest.`;
+
+// ---------------------------------------------------------------------------
+// V2 Chat flow: diagnosticPartner
+// ---------------------------------------------------------------------------
+
+export const diagnosticPartnerChat = ai.defineFlow(
+  {
+    name: "diagnosticPartnerChat",
+    inputSchema: z.object({
+      messages: z.array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string(),
+          imageBase64: z.string().optional(),
+        })
+      ),
+    }),
+    outputSchema: ChatAgentResponseSchema,
+  },
+  async (input): Promise<ChatAgentResponse> => {
+    console.log(
+      `[diagnosticPartnerChat] Processing ${input.messages.length} messages`
+    );
+
+    // Build Genkit message history from prior turns
+    // All messages except the last become history
+    const history = input.messages.slice(0, -1);
+    const currentMessage = input.messages[input.messages.length - 1];
+
+    // Convert prior messages to Genkit format
+    const genkitHistory = history.map((msg) => ({
+      role: msg.role === "assistant" ? ("model" as const) : ("user" as const),
+      content: [{ text: msg.content }],
+    }));
+
+    // Build the current prompt — may include an image
+    // Genkit's generate() accepts prompt as a string or Part array.
+    // For multimodal we must use the Part format with explicit types.
+    const generateOpts: Parameters<typeof ai.generate>[0] = {
+      system: CHAT_SYSTEM_PROMPT,
+      messages: genkitHistory,
+      prompt: currentMessage.content,
+      tools: [searchManual, getManualSection, searchParts, getSuppliers, getRepairGuide],
+      output: { schema: ChatAgentResponseSchema },
+      maxTurns: 5,
+    };
+
+    if (currentMessage.imageBase64) {
+      // Multimodal: text + image — use Part array for prompt
+      generateOpts.prompt = [
+        { text: currentMessage.content },
+        {
+          media: {
+            contentType: "image/jpeg" as const,
+            url: `data:image/jpeg;base64,${currentMessage.imageBase64}`,
+          },
+        },
+      ] as Parameters<typeof ai.generate>[0] extends { prompt?: infer P } ? P : never;
+    }
+
+    const response = await ai.generate(generateOpts);
+
+    const result = response.output;
+    if (!result) {
+      console.error("[diagnosticPartnerChat] LLM returned null output");
+      return {
+        type: "clarification",
+        message:
+          "I wasn't able to process that. Could you rephrase your question? Include the equipment manufacturer and model if possible.",
+        manualReferences: [],
+        diagnosis: null,
+        recommendedPart: null,
+        repairGuide: null,
+        supplierRanking: [],
+        alternativeParts: [],
+        confidence: null,
+        reasoning: "The model failed to produce a valid structured output.",
+        warnings: [],
+      };
+    }
+
+    console.log(
+      `[diagnosticPartnerChat] Response type: ${result.type}, refs: ${result.manualReferences.length}`
+    );
+    return result;
+  }
+);
+
+// ---------------------------------------------------------------------------
+// V2 Instrumented wrapper
+// ---------------------------------------------------------------------------
+
+export async function chatWithMetrics(
+  messages: ChatMessage[]
+): Promise<{ response: ChatAgentResponse; metrics: RequestMetrics }> {
+  const collector = new MetricsCollector();
+  setActiveCollector(collector);
+
+  try {
+    const response = await diagnosticPartnerChat({ messages });
+
+    // Build a pseudo-AgentResponse for metrics finalization
+    const lastUserMsg =
+      [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+    const pseudoResponse: AgentResponse = {
+      diagnosis: response.diagnosis ?? response.message,
+      recommendedPart: response.recommendedPart,
+      repairGuide: response.repairGuide,
+      supplierRanking: response.supplierRanking,
+      alternativeParts: response.alternativeParts,
+      confidence: response.confidence ?? "medium",
+      reasoning: response.reasoning,
+      warnings: response.warnings,
+    };
+    const metrics = collector.finalize(lastUserMsg, pseudoResponse);
+
     saveMetrics(metrics).catch(() => {});
 
     return { response, metrics };

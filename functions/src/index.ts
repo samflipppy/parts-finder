@@ -1,8 +1,9 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { onRequest } from "firebase-functions/v2/https";
-import { diagnoseWithMetrics } from "./agent";
+import { diagnoseWithMetrics, chatWithMetrics } from "./agent";
 import { getRecentMetrics, aggregateMetrics } from "./metrics";
+import type { ChatMessage } from "./types";
 
 // Initialize Firebase Admin SDK (once, at cold start)
 initializeApp();
@@ -97,6 +98,87 @@ export const metrics = onRequest(
       console.error("[metrics] Error:", message);
       res.status(500).json({
         error: "Failed to fetch metrics.",
+        detail: message,
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/chat
+ *
+ * V2 Diagnostic Partner endpoint. Accepts a conversation history
+ * (multi-turn messages with optional image attachments) and returns
+ * a ChatAgentResponse with manual references, diagnosis, and guidance.
+ */
+export const chat = onRequest(
+  { cors: true, timeoutSeconds: 120 },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).json({ error: "Method not allowed. Use POST." });
+      return;
+    }
+
+    const { messages } = req.body as { messages?: ChatMessage[] };
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      res.status(400).json({
+        error:
+          "Missing or invalid 'messages' field. Provide an array of {role, content} message objects.",
+      });
+      return;
+    }
+
+    // Validate each message
+    for (const msg of messages) {
+      if (!msg.role || !["user", "assistant"].includes(msg.role)) {
+        res.status(400).json({
+          error: "Each message must have a role of 'user' or 'assistant'.",
+        });
+        return;
+      }
+      if (!msg.content || typeof msg.content !== "string") {
+        res.status(400).json({
+          error: "Each message must have a non-empty 'content' string.",
+        });
+        return;
+      }
+    }
+
+    // Ensure last message is from the user
+    if (messages[messages.length - 1].role !== "user") {
+      res.status(400).json({
+        error: "The last message must be from the user.",
+      });
+      return;
+    }
+
+    // Size limits
+    const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+    if (totalChars > 50000) {
+      res.status(400).json({
+        error: "Conversation too long. Maximum 50,000 characters total.",
+      });
+      return;
+    }
+
+    const lastMsg = messages[messages.length - 1].content;
+    console.log(
+      `[chat] Received ${messages.length} messages, latest: "${lastMsg.substring(0, 100)}..."`
+    );
+
+    try {
+      const { response, metrics } = await chatWithMetrics(messages);
+      console.log(
+        `[chat] Completed — type: ${response.type}, refs: ${response.manualReferences.length}, ` +
+          `latency: ${metrics.totalLatencyMs}ms, tools: ${metrics.totalToolCalls}`
+      );
+      res.status(200).json({ ...response, _metrics: metrics });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.error("[chat] Error:", message);
+      res.status(500).json({
+        error: "Failed to process chat request.",
         detail: message,
       });
     }

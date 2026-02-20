@@ -9,6 +9,10 @@
       {
         "source": "/api/metrics",
         "function": "metrics"
+      },
+      {
+        "source": "/api/chat",
+        "function": "chat"
       }
     ]
   },

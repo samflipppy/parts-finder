@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PartsFinder — Diagnostic Partner</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+  <header>
+    <h1>Diagnostic Partner</h1>
+    <p class="subtitle">Chat with the service manual</p>
+    <nav class="header-nav">
+      <a href="/">Parts Lookup (V1)</a>
+    </nav>
+  </header>
+
+  <main class="chat-main">
+    <!-- Message history -->
+    <div id="chat-messages" class="chat-messages"></div>
+
+    <!-- Input area -->
+    <div class="chat-input-area">
+      <div id="image-preview" class="image-preview hidden">
+        <img id="image-preview-img" src="" alt="Attached photo">
+        <button id="image-remove-btn" type="button" title="Remove image">x</button>
+      </div>
+      <div class="chat-input-row">
+        <label class="attach-btn" title="Attach a photo">
+          <input type="file" id="image-input" accept="image/*" hidden>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M17.5 12.5V15.8333C17.5 16.2754 17.3244 16.6993 17.0118 17.0118C16.6993 17.3244 16.2754 17.5 15.8333 17.5H4.16667C3.72464 17.5 3.30072 17.3244 2.98816 17.0118C2.6756 16.6993 2.5 16.2754 2.5 15.8333V12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M14.1667 6.66667L10 2.5L5.83333 6.66667" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 2.5V12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </label>
+        <textarea id="chat-input" placeholder="Describe a problem, ask about a procedure, or share a photo..." rows="1"></textarea>
+        <button id="send-btn" type="button">Send</button>
+      </div>
+      <div class="chat-examples">
+        <span class="examples-label">Try:</span>
+        <button class="chip" type="button">Evita V500 showing error 57, fan not spinning</button>
+        <button class="chip" type="button">I'm on step 6 of the MX800 display replacement. The ZIF latch won't open — how much force is normal?</button>
+        <button class="chip" type="button">What's the torque spec for the CT660 tube mounting bolts?</button>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <p>PartsFinder Agent &mdash; Demo Project. Not for clinical use.</p>
+  </footer>
+
+  <script src="chat.js"></script>
+</body>
+</html>

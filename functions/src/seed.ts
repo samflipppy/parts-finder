@@ -11,7 +11,7 @@ dotenv.config();
 
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { Part, Supplier, RepairGuide } from "./types";
+import { Part, Supplier, RepairGuide, ServiceManual } from "./types";
 
 // Initialize Firebase Admin — uses GOOGLE_APPLICATION_CREDENTIALS or
 // falls back to the default emulator connection when running locally.
@@ -632,6 +632,451 @@ const repairGuides: RepairGuide[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Service Manuals (V2 — diagnostic partner)
+// ---------------------------------------------------------------------------
+
+const serviceManuals: ServiceManual[] = [
+  {
+    manualId: "manual_evita_v500",
+    title: "Drager Evita V500 Technical Service Manual",
+    equipmentName: "Evita V500",
+    manufacturer: "Drager",
+    compatibleModels: ["Evita V500", "Evita V800"],
+    revision: "Rev 4.2, 2023-06",
+    totalPages: 312,
+    sections: [
+      {
+        sectionId: "ev500_1_1",
+        title: "1.1 Safety Information",
+        content: "This manual is intended for qualified biomedical technicians trained on Drager ventilator systems. All repairs must be performed with the ventilator disconnected from the patient. A backup ventilator must be available before any service procedure begins. High voltages (up to 240 VAC) are present inside the unit even after power switch is turned off — always disconnect mains power and wait 30 seconds for capacitor discharge.",
+        warnings: [
+          "DANGER: Disconnect the ventilator from the patient before any service procedure. Patient death or serious injury may result from servicing a ventilator while connected to a patient.",
+          "WARNING: Internal capacitors retain charge for up to 30 seconds after mains disconnection. Wait a minimum of 30 seconds before opening any service panel.",
+          "CAUTION: Use ESD protection when handling circuit boards. Static discharge can cause latent damage that may not be immediately apparent."
+        ],
+      },
+      {
+        sectionId: "ev500_3_1",
+        title: "3.1 Cooling System Overview",
+        content: "The Evita V500 uses a forced-air cooling system consisting of a primary fan module (P/N DRG-8306750) mounted in the lower-left compartment and a secondary convection path through the upper ventilation slots. The fan operates at 2800–3200 RPM under normal load. Airflow is routed across the main PCB, power supply, and oxygen sensor module. The fan draws 12 VDC from header J14 on the main PCB. Fan failure triggers Error 57 (fan speed below threshold) or Error 58 (fan not detected). The system will continue to operate for up to 15 minutes after fan failure before initiating a thermal shutdown.",
+        specifications: [
+          { parameter: "Fan operating speed", value: "3000", tolerance: "+/- 200", unit: "RPM" },
+          { parameter: "Fan supply voltage", value: "12", tolerance: "+/- 0.5", unit: "VDC" },
+          { parameter: "Fan current draw", value: "0.35", tolerance: "+/- 0.05", unit: "A" },
+          { parameter: "Thermal shutdown threshold", value: "65", unit: "°C" },
+          { parameter: "Fan connector", value: "J14, 4-pin Molex", unit: "" },
+        ],
+        figures: [
+          { figureId: "fig_3_1", description: "Cooling system airflow diagram showing fan module location, airflow path across PCB and power supply, and exhaust through upper ventilation slots" },
+        ],
+      },
+      {
+        sectionId: "ev500_3_7",
+        title: "3.7 Fan Module Replacement",
+        content: "This procedure describes removal and installation of the primary cooling fan module (P/N DRG-8306750). Estimated time: 45–60 minutes for a trained technician. The fan module is a field-replaceable unit (FRU) that does not require factory calibration after installation.",
+        tools: [
+          "T10 Torx screwdriver",
+          "T15 Torx screwdriver",
+          "ESD wrist strap",
+          "Compressed air can",
+          "Multimeter (for verifying fan connector voltage)",
+          "Torque driver set to 0.8 Nm",
+        ],
+        warnings: [
+          "CAUTION: The rear panel screws are different lengths — top row screws are 12mm, bottom row are 16mm. Mixing them can strip the chassis threads.",
+          "CAUTION: Do not force the fan connector. The latch must be squeezed before removal. Forcing the connector damages pin J14-3 (tachometer signal).",
+        ],
+        steps: [
+          "Power down the ventilator and disconnect from mains. Move to a clean, static-safe work surface.",
+          "Remove the rear service panel (6× T10 Torx screws). Note: top row screws are 12mm, bottom row are 16mm — do not interchange.",
+          "Locate the fan module in the lower-left compartment. It is a black square assembly (80mm × 80mm × 25mm) with a 4-pin Molex connector.",
+          "Disconnect the 4-pin fan cable from header J14 on the main PCB. Squeeze the latch tab before pulling — do not force.",
+          "Remove the 4× T15 Torx screws securing the fan module to the chassis bracket.",
+          "Lift the old fan module out. Inspect the compartment for dust accumulation. Use compressed air to clear debris (blow away from the PCB, not toward it).",
+          "Seat the new fan module into the bracket with the label facing inward (toward the PCB). The airflow arrow on the fan housing should point upward.",
+          "Secure with 4× T15 screws. Torque to 0.8 Nm — do not overtorque.",
+          "Reconnect the 4-pin cable to header J14. You should hear/feel the latch click.",
+          "Before reassembling the rear panel, verify fan operation: connect mains power and turn on. Visually confirm the fan spins. Measure voltage at J14: pins 1-2 should read 12 VDC (+/- 0.5V).",
+          "Reattach the rear panel (6× T10 screws, correct lengths in correct positions).",
+          "Enter the service menu: hold INFO + ALARM SILENCE during boot. Navigate to Service > Hardware Tests > Fan Module.",
+          "Run the Fan Test. Verify: no Error 57/58 codes, fan RPM reads between 2800–3200, fan current reads 0.30–0.40 A.",
+        ],
+        specifications: [
+          { parameter: "Fan mounting torque", value: "0.8", unit: "Nm" },
+          { parameter: "Post-install RPM (acceptable range)", value: "2800–3200", unit: "RPM" },
+          { parameter: "Post-install current (acceptable range)", value: "0.30–0.40", unit: "A" },
+          { parameter: "Fan module dimensions", value: "80 × 80 × 25", unit: "mm" },
+          { parameter: "Rear panel screw (top row)", value: "12", unit: "mm" },
+          { parameter: "Rear panel screw (bottom row)", value: "16", unit: "mm" },
+        ],
+      },
+      {
+        sectionId: "ev500_3_8",
+        title: "3.8 Flow Sensor Calibration",
+        content: "After replacing the flow sensor assembly (P/N DRG-8403735), a two-point calibration must be performed. The flow sensor uses a differential pressure transducer to measure inspiratory and expiratory flow. Calibration requires a certified 1-liter calibration syringe (Drager P/N 8403741 or equivalent). The calibration procedure compensates for manufacturing variations in the sensor orifice diameter.",
+        specifications: [
+          { parameter: "Calibration syringe volume", value: "1.000", tolerance: "+/- 0.005", unit: "L" },
+          { parameter: "Acceptable tidal volume error post-calibration", value: "+/- 10", unit: "mL (at 500 mL test volume)" },
+          { parameter: "Flow sensor operating range", value: "0–180", unit: "L/min" },
+          { parameter: "Sensor zero drift (max allowed)", value: "+/- 2", unit: "mL/min" },
+        ],
+        tools: [
+          "Certified 1-liter calibration syringe (P/N 8403741 or equivalent)",
+          "Test lung (adult, 1L compliance)",
+        ],
+        steps: [
+          "Install the new flow sensor in the patient wye. Ensure the arrow on the sensor points toward the patient port.",
+          "Connect a test lung to the patient port.",
+          "Enter Service > Calibration > Flow Sensor from the service menu.",
+          "When prompted, disconnect the calibration syringe and allow the sensor to zero. Press CONFIRM when the zero reading stabilizes (should read 0 +/- 2 mL/min).",
+          "Connect the calibration syringe to the sensor inlet. When prompted, deliver exactly 1 liter by fully depressing the syringe plunger in a smooth, steady stroke (approximately 1 second).",
+          "The system will display the measured volume. Acceptable range: 990–1010 mL. If outside range, repeat the stroke.",
+          "Press CONFIRM to store the calibration. Run a verification breath with the test lung at 500 mL — displayed tidal volume should read 490–510 mL.",
+        ],
+        warnings: [
+          "CAUTION: The flow sensor is orientation-sensitive. Installing it backward will cause inverted flow readings and incorrect tidal volume delivery.",
+          "WARNING: Do not use the ventilator on a patient if post-calibration verification exceeds +/- 10 mL at 500 mL test volume.",
+        ],
+      },
+      {
+        sectionId: "ev500_4_1",
+        title: "4.1 Error Code Reference",
+        content: "This section lists all user-facing and service error codes for the Evita V500/V800 platform.",
+        steps: [
+          "Error 12: Flow measurement error. Flow sensor reading outside expected range. Check sensor orientation and calibration. Replace flow sensor (P/N DRG-8403735) if calibration fails.",
+          "Error 22: Exhalation valve regulation error. PEEP deviation exceeds +/- 2 cmH2O from set value. Check exhalation valve assembly (P/N DRG-8412130) for contamination or mechanical failure.",
+          "Error 57: Fan speed below threshold. Cooling fan RPM dropped below 2400. Check fan connector J14, measure 12V supply. Replace fan module (P/N DRG-8306750) if voltage is correct but fan speed is low.",
+          "Error 58: Fan not detected. No tachometer signal on J14 pin 3. Check connector seating first. If connector is secure, replace fan module (P/N DRG-8306750).",
+        ],
+      },
+    ],
+  },
+  {
+    manualId: "manual_mx800",
+    title: "Philips IntelliVue MX800 Service Guide",
+    equipmentName: "IntelliVue MX800",
+    manufacturer: "Philips",
+    compatibleModels: ["IntelliVue MX800", "IntelliVue MX700"],
+    revision: "Rev 3.1, 2022-11",
+    totalPages: 278,
+    sections: [
+      {
+        sectionId: "mx800_1_1",
+        title: "1.1 General Safety",
+        content: "This service guide is for use by Philips-trained biomedical engineers and technicians only. The IntelliVue MX800 contains no user-serviceable parts on the patient-facing modules — module replacement is the standard field repair. Always disconnect the monitor from the patient and remove from clinical use before opening the housing. The internal battery will continue to provide power after the AC cord is removed. Press and hold the power button for 5 seconds to perform a full shutdown.",
+        warnings: [
+          "WARNING: The internal battery provides backup power for up to 30 minutes. A full shutdown (power button held 5 seconds) is required before opening the housing.",
+          "CAUTION: Handle LCD panels by edges only. Pressure on the display surface causes permanent pixel damage.",
+          "CAUTION: The MX800 uses lead-free solder. If reflowing or soldering components, use a lead-free profile (peak 260°C).",
+        ],
+      },
+      {
+        sectionId: "mx800_5_1",
+        title: "5.1 Display Subsystem Overview",
+        content: "The MX800 uses a 19-inch TFT LCD display (P/N PHI-453564243681) with integrated LED backlight. The display connects to the video controller via a 40-pin LVDS ribbon cable at connector J3 on the video board. Backlight power is supplied through a separate 2-pin connector. The display resolution is 1280×1024 at 60 Hz. Common failure modes include: complete backlight failure (screen appears black but touch still works), ribbon cable fatigue (intermittent artifacts, partial display), and LCD panel cracking (physical damage).",
+        specifications: [
+          { parameter: "Display size", value: "19", unit: "inches (diagonal)" },
+          { parameter: "Resolution", value: "1280 × 1024", unit: "pixels" },
+          { parameter: "Refresh rate", value: "60", unit: "Hz" },
+          { parameter: "Backlight type", value: "LED edge-lit", unit: "" },
+          { parameter: "Backlight voltage", value: "19.5", tolerance: "+/- 0.5", unit: "VDC" },
+          { parameter: "Ribbon cable connector", value: "J3, 40-pin ZIF", unit: "" },
+          { parameter: "Backlight connector", value: "2-pin JST, white", unit: "" },
+        ],
+        figures: [
+          { figureId: "fig_5_1", description: "Exploded view of display assembly showing LCD panel, bezel frame, ribbon cable routing, and backlight connector location" },
+        ],
+      },
+      {
+        sectionId: "mx800_5_3",
+        title: "5.3 LCD Display Replacement",
+        content: "This procedure covers replacement of the LCD display assembly (P/N PHI-453564243681). The display assembly includes the LCD panel, LED backlight strips, and bezel mounting frame. The video board and touch controller remain in the monitor and are not replaced with this procedure.",
+        tools: [
+          "Phillips #2 screwdriver",
+          "Plastic spudger (non-marring pry tool)",
+          "Microfiber cloth",
+          "ESD wrist strap",
+          "Isopropyl alcohol wipes (for cleaning bezel adhesive residue)",
+        ],
+        warnings: [
+          "CAUTION: The ZIF (Zero Insertion Force) connector at J3 is fragile. Flip the latch UP before removing the ribbon cable. Pulling the ribbon without releasing the latch will tear the cable and damage the ZIF socket.",
+          "CAUTION: Do not press on the LCD surface. Place face-down on a soft, lint-free surface only.",
+          "WARNING: Ensure the monitor is fully powered off (hold power 5 seconds) and AC disconnected. The internal battery can supply power sufficient to cause a shock hazard at the backlight connector.",
+        ],
+        steps: [
+          "Power off the monitor (hold power button 5 seconds). Disconnect AC power cord and all patient cables.",
+          "Place the monitor face-down on a padded, lint-free surface (e.g., anti-static foam).",
+          "Remove the 4× Phillips screws from the rear housing. Note: two screws are longer (20mm) at the top, two shorter (14mm) at the bottom.",
+          "Insert a plastic spudger at the bottom edge seam between the rear housing and front bezel. Gently work around the perimeter to release the snap clips. There are 8 clips total: 3 bottom, 2 per side, 1 top.",
+          "Lift the rear housing straight up and set aside. The video board and main board are attached to the rear housing — handle carefully.",
+          "Disconnect the LCD ribbon cable from connector J3: flip the brown ZIF latch upward (it hinges up 90°), then slide the ribbon cable out. Do not pull the latch past 90° or it will break.",
+          "Disconnect the backlight power cable (2-pin white JST connector near the top-right of the panel). Pull straight out, do not rock side to side.",
+          "Remove the 6× Phillips screws (all 10mm) securing the LCD panel to the bezel frame. The screws are along the left and right edges, 3 per side.",
+          "Lift the old LCD panel out of the bezel frame. Set aside for disposal/return.",
+          "Clean the bezel frame channel with a microfiber cloth. Remove any adhesive residue with an isopropyl wipe if needed.",
+          "Place the new LCD panel into the bezel frame, display surface facing down. Align the screw holes and the ribbon cable exit point (bottom-center).",
+          "Secure with the 6× Phillips screws (10mm). Snug but do not overtorque — the bezel is plastic and strips easily.",
+          "Connect the backlight power cable to the 2-pin JST connector. It clicks when seated.",
+          "Connect the LCD ribbon cable to J3: ensure the ZIF latch is up, slide the ribbon fully in (the blue reinforcement strip should be visible and flush with the connector edge), then press the ZIF latch down firmly.",
+          "Lower the rear housing onto the front bezel. Press around the perimeter to engage all 8 snap clips — you should hear/feel each click.",
+          "Install the 4× rear housing screws (20mm at top, 14mm at bottom).",
+          "Reconnect AC power and turn on. The Philips boot logo should appear within 10 seconds.",
+          "If the display shows artifacts, colored lines, or no image: power off, reopen, and reseat the ribbon cable at J3. Check that the ZIF latch is fully closed.",
+        ],
+        specifications: [
+          { parameter: "Rear housing screws (top)", value: "20", unit: "mm" },
+          { parameter: "Rear housing screws (bottom)", value: "14", unit: "mm" },
+          { parameter: "LCD mounting screws (all 6)", value: "10", unit: "mm" },
+          { parameter: "Snap clips (total count)", value: "8", unit: "" },
+          { parameter: "Expected boot time to logo", value: "< 10", unit: "seconds" },
+        ],
+      },
+      {
+        sectionId: "mx800_5_5",
+        title: "5.5 Backlight Troubleshooting",
+        content: "If the MX800 screen appears completely black but the touch interface still responds (you can hear button press tones), the backlight has failed. Before replacing the entire display assembly, check the backlight power supply. Measure voltage at the 2-pin backlight connector (disconnected from the panel): should read 19.5 VDC +/- 0.5V. If voltage is absent, the fault is on the video board or power supply — not the display panel. If voltage is present, the backlight strips inside the display assembly have failed and the full assembly (P/N PHI-453564243681) must be replaced.",
+        specifications: [
+          { parameter: "Backlight supply voltage (expected)", value: "19.5", tolerance: "+/- 0.5", unit: "VDC" },
+          { parameter: "Backlight current draw (normal)", value: "0.8", tolerance: "+/- 0.1", unit: "A" },
+        ],
+      },
+      {
+        sectionId: "mx800_7_1",
+        title: "7.1 Power Supply Module",
+        content: "The AC/DC power supply module (P/N PHI-453564020911) converts mains AC input (100–240 VAC, 50/60 Hz) to the internal DC rails: +12V (main logic), +5V (standby), +3.3V (processor core), and +19.5V (backlight). The power supply is located in the upper-right area of the rear housing. It is secured with 4× Phillips screws and connects to the main board via a 12-pin power connector (J1). Common failure modes: complete failure (no power), intermittent shutdowns (thermal protection tripping), and partial rail failure (some functions work, others don't).",
+        specifications: [
+          { parameter: "AC input range", value: "100–240", unit: "VAC" },
+          { parameter: "+12V rail", value: "12.0", tolerance: "+/- 0.3", unit: "VDC" },
+          { parameter: "+5V standby rail", value: "5.0", tolerance: "+/- 0.25", unit: "VDC" },
+          { parameter: "+3.3V processor rail", value: "3.3", tolerance: "+/- 0.15", unit: "VDC" },
+          { parameter: "+19.5V backlight rail", value: "19.5", tolerance: "+/- 0.5", unit: "VDC" },
+          { parameter: "Power supply connector", value: "J1, 12-pin Molex", unit: "" },
+        ],
+        tools: [
+          "Phillips #2 screwdriver",
+          "Multimeter",
+          "ESD wrist strap",
+        ],
+        steps: [
+          "Perform full shutdown and disconnect AC. Open rear housing (see Section 5.3 steps 1–5).",
+          "Locate the power supply in the upper-right quadrant of the rear housing. It has a metal shield with ventilation holes.",
+          "Disconnect the 12-pin power connector from J1 on the main board. Squeeze the latch before pulling.",
+          "Disconnect the AC inlet cable from the power supply (internal IEC connector).",
+          "Remove the 4× Phillips screws securing the power supply to the rear housing.",
+          "Lift the power supply out. Install the replacement in reverse order.",
+          "After reassembly, measure output voltages at J1: +12V (pins 1-3), +5V (pins 5-6), +3.3V (pins 8-9), +19.5V (pin 11). All should be within specified tolerances.",
+        ],
+        warnings: [
+          "DANGER: Mains voltage is present at the AC inlet connection. Verify AC is disconnected and the power cord is removed before touching the power supply.",
+          "CAUTION: The power supply contains internal fuses that are not field-replaceable. Do not open the power supply enclosure.",
+        ],
+      },
+    ],
+  },
+  {
+    manualId: "manual_ct660",
+    title: "GE Optima CT660 Field Service Manual",
+    equipmentName: "Optima CT660",
+    manufacturer: "GE",
+    compatibleModels: ["Optima CT660", "Revolution CT"],
+    revision: "Rev 2.8, 2023-03",
+    totalPages: 524,
+    sections: [
+      {
+        sectionId: "ct660_1_1",
+        title: "1.1 Safety Requirements",
+        content: "This manual is restricted to GE-certified field service engineers. The CT660 operates at voltages up to 140 kVp and tube currents up to 800 mA. Lethal voltages are present in the high-voltage generator, slip ring, and X-ray tube housing. Radiation exposure is possible during tube conditioning and calibration procedures. All applicable radiation safety protocols must be followed.",
+        warnings: [
+          "DANGER: High voltages up to 140,000 volts are present in the tube housing and HV generator during operation. These voltages can cause instant death.",
+          "DANGER: X-ray radiation is produced during tube conditioning, calibration, and diagnostic scans. Wear appropriate radiation monitoring and shielding.",
+          "WARNING: The X-ray tube anode can exceed 200°C during operation. Allow a minimum 2-hour cool-down before servicing the tube assembly.",
+          "WARNING: The tube assembly weighs approximately 65 lbs (30 kg). Always use a tube lift sling rated for 100 lbs minimum.",
+        ],
+      },
+      {
+        sectionId: "ct660_6_1",
+        title: "6.1 X-Ray Tube Assembly Overview",
+        content: "The Optima CT660 uses a high-performance rotating anode X-ray tube (P/N GE-2350400-2) with a 6.3 MHU anode heat capacity. The tube is oil-cooled via a recirculating pump system (Section 6.5). The tube housing contains the cathode assembly, rotating anode, stator coils, and rotor bearings. The tube connects to the high-voltage generator via two shielded HV cables (cathode/anode). The stator drive cable provides the 3-phase signal for anode rotation. The rotor sense cable provides RPM feedback to the generator controller.",
+        specifications: [
+          { parameter: "Anode heat capacity", value: "6.3", unit: "MHU" },
+          { parameter: "Maximum tube voltage", value: "140", unit: "kVp" },
+          { parameter: "Maximum tube current", value: "800", unit: "mA" },
+          { parameter: "Anode rotation speed", value: "9600", unit: "RPM" },
+          { parameter: "Focal spot sizes", value: "0.7 / 1.2", unit: "mm" },
+          { parameter: "Tube assembly weight", value: "65", unit: "lbs (30 kg)" },
+          { parameter: "Oil volume in housing", value: "12.5", unit: "liters" },
+          { parameter: "Maximum anode temperature", value: "200+", unit: "°C" },
+          { parameter: "Minimum cool-down before service", value: "2", unit: "hours" },
+        ],
+      },
+      {
+        sectionId: "ct660_6_3",
+        title: "6.3 X-Ray Tube Replacement",
+        content: "This procedure covers removal and installation of the X-ray tube assembly. Estimated time: 4–6 hours including tube conditioning and calibration. This procedure MUST be performed by a GE-certified field service engineer.",
+        tools: [
+          "GE CT Service Key + Service software access",
+          "Tube lift sling rated for 100 lbs (45 kg) minimum",
+          "13mm, 15mm, 17mm socket set",
+          "Torque wrench (range 10–60 Nm)",
+          "Coolant drain pan (15-liter capacity minimum)",
+          "5 gallons (19 liters) GE-approved CT coolant (P/N GE-2142050)",
+          "Multimeter rated for high voltage measurement",
+          "Radiation survey meter",
+        ],
+        warnings: [
+          "DANGER: Verify all high-voltage contactors are open and locked out before approaching the tube housing. Measure HV at the cable connectors with an HV-rated meter to confirm zero voltage.",
+          "WARNING: The tube oil may be hot. Wear thermal gloves when draining the cooling loop if the system was recently in operation.",
+          "WARNING: Used X-ray tubes may contain depleted tungsten target material. Follow facility hazardous waste protocols for disposal.",
+          "CAUTION: When connecting HV cables, torque to specification (see step table). Undertorqued connections cause arcing; overtorqued connections crack the insulator.",
+        ],
+        steps: [
+          "Shut down the CT system from the operator console. Open the main circuit breaker and apply lock-out/tag-out per facility policy.",
+          "Verify zero voltage at HV cable connectors using an HV-rated multimeter. Both cathode (−) and anode (+) cables must read < 50V.",
+          "Open the gantry side panels (left and right). Locate the tube housing in the gantry frame.",
+          "Place the coolant drain pan under the tube housing. Disconnect the coolant supply and return lines at the quick-disconnect fittings. Drain all coolant (approximately 12.5 liters). Note: some residual oil will drip for several minutes.",
+          "Disconnect the high-voltage cathode cable (marked −). Unscrew the connector ring counterclockwise (requires 17mm socket). Pull straight out.",
+          "Disconnect the high-voltage anode cable (marked +) using the same method.",
+          "Disconnect the stator drive cable (6-pin connector, hand-tightened) from the tube housing.",
+          "Disconnect the rotor sense cable (4-pin connector) from the tube housing.",
+          "Attach the tube lift sling to the two M10 lifting points on the tube housing (top surface). Take up all slack — the sling must support full weight before removing the mounting bolts.",
+          "Remove the 4× 17mm mounting bolts securing the tube housing to the gantry cradle. Support the tube at all times.",
+          "Using the lift sling, carefully lower the old tube assembly straight down and out of the gantry. Place on a padded surface.",
+          "Inspect the gantry cradle mounting surfaces for damage, corrosion, or coolant residue. Clean as needed.",
+          "Using the lift sling, raise the new tube assembly into the gantry cradle. Align the 4 mounting holes.",
+          "Hand-start all 4 mounting bolts before torquing. Torque to 45 Nm in a cross pattern (front-left, rear-right, front-right, rear-left).",
+          "Reconnect the rotor sense cable (4-pin) and stator drive cable (6-pin). Hand-tighten connectors.",
+          "Reconnect HV anode (+) cable. Align the guide pin and push in, then tighten connector ring to 25 Nm.",
+          "Reconnect HV cathode (−) cable using the same method. Torque to 25 Nm.",
+          "Reconnect coolant supply and return lines. Refill with 5 gallons GE-approved coolant. Bleed air by running the coolant pump (from service software) for 5 minutes and checking for bubbles in the sight glass.",
+          "Close gantry panels. Remove lock-out/tag-out and close main breaker.",
+          "Run the GE tube conditioning protocol from the service console: this performs a graduated series of exposures (60 kV/50 mA up to 140 kV/400 mA) over approximately 30 minutes to season the new tube.",
+          "After conditioning, perform: air calibration, detector offset calibration, detector gain calibration, and mA linearity verification.",
+          "Run a water phantom scan at standard head protocol. Verify: CT number of water = 0 +/- 4 HU, noise < 5 HU, no ring artifacts.",
+        ],
+        specifications: [
+          { parameter: "Mounting bolt torque", value: "45", unit: "Nm" },
+          { parameter: "HV cable connector torque", value: "25", unit: "Nm" },
+          { parameter: "Coolant volume (refill)", value: "19", unit: "liters (5 gallons)" },
+          { parameter: "Conditioning duration", value: "~30", unit: "minutes" },
+          { parameter: "Water phantom CT number (acceptance)", value: "0", tolerance: "+/- 4", unit: "HU" },
+          { parameter: "Water phantom noise (acceptance)", value: "< 5", unit: "HU" },
+        ],
+      },
+      {
+        sectionId: "ct660_6_5",
+        title: "6.5 Cooling System Maintenance",
+        content: "The CT tube cooling system circulates GE-approved dielectric coolant (P/N GE-2142050) through the tube housing to maintain anode and housing temperature within safe limits. The system consists of a recirculating pump (P/N GE-2266588), a heat exchanger with dual fans, a coolant reservoir, and a filter assembly. The coolant should be replaced every 18 months or 20,000 scan hours, whichever comes first. The pump generates 15 PSI at full flow (4.5 L/min). A low-pressure switch triggers a cooling fault if pressure drops below 8 PSI.",
+        specifications: [
+          { parameter: "Coolant type", value: "GE-approved dielectric (P/N GE-2142050)", unit: "" },
+          { parameter: "Coolant replacement interval", value: "18 months or 20,000 scan hours", unit: "" },
+          { parameter: "Pump operating pressure", value: "15", tolerance: "+/- 2", unit: "PSI" },
+          { parameter: "Low-pressure fault threshold", value: "8", unit: "PSI" },
+          { parameter: "Coolant flow rate", value: "4.5", tolerance: "+/- 0.5", unit: "L/min" },
+          { parameter: "System coolant volume", value: "12.5", unit: "liters" },
+        ],
+      },
+    ],
+  },
+  {
+    manualId: "manual_zoll_r",
+    title: "Zoll R Series Service Manual",
+    equipmentName: "R Series",
+    manufacturer: "Zoll",
+    compatibleModels: ["R Series", "R Series Plus"],
+    revision: "Rev 5.0, 2024-01",
+    totalPages: 186,
+    sections: [
+      {
+        sectionId: "zoll_1_1",
+        title: "1.1 Safety Precautions",
+        content: "The R Series defibrillator stores energy up to 200 joules in the high-voltage capacitor module. Even when powered off, the capacitor may retain a charge. Always perform an internal discharge before opening the device housing: press and hold the SHOCK button for 5 seconds with paddles disconnected. The capacitor module (P/N ZOLL-9650-0801-01) should be treated as a high-voltage component at all times.",
+        warnings: [
+          "DANGER: The defibrillator capacitor can store lethal energy (up to 200 joules at 1700 volts). Always perform the internal discharge procedure before servicing.",
+          "WARNING: Do not open the device housing without first discharging the capacitor. Residual charge can cause severe burns or cardiac arrest.",
+          "CAUTION: Use only Zoll-approved SurePower batteries (P/N ZOLL-8019-0535-01). Third-party batteries may not communicate properly with the charge management system and can cause fires.",
+        ],
+      },
+      {
+        sectionId: "zoll_3_1",
+        title: "3.1 Battery System Overview",
+        content: "The R Series uses a SurePower rechargeable lithium-ion battery pack (P/N ZOLL-8019-0535-01). The battery provides 5.8 Ah at 14.4V nominal. A fully charged battery supports approximately 300 defibrillation shocks at 200J or 5 hours of continuous monitoring. The battery communicates with the device via a 4-contact smart interface that reports state of charge, cycle count, temperature, and fault status. The charge indicator on the front panel shows 1–4 bars corresponding to 25% increments. A flashing battery indicator means the battery is below 10% or has detected a fault.",
+        specifications: [
+          { parameter: "Battery chemistry", value: "Lithium-ion", unit: "" },
+          { parameter: "Nominal voltage", value: "14.4", unit: "VDC" },
+          { parameter: "Capacity", value: "5.8", unit: "Ah" },
+          { parameter: "Charge cycles (rated life)", value: "500", unit: "cycles" },
+          { parameter: "Full charge indicator", value: "4 bars", unit: "" },
+          { parameter: "Low battery threshold", value: "10%", unit: "state of charge" },
+          { parameter: "Battery weight", value: "0.78", unit: "lbs (355 g)" },
+          { parameter: "Charging time (0 to 100%)", value: "3.5", unit: "hours" },
+          { parameter: "Operating temperature range", value: "0 to 50", unit: "°C" },
+        ],
+      },
+      {
+        sectionId: "zoll_3_3",
+        title: "3.3 Battery Replacement Procedure",
+        content: "The battery is a tool-free, slide-in field-replaceable unit. No calibration is required after replacement. The R Series will perform an automatic self-test when a new battery is inserted.",
+        steps: [
+          "Power off the defibrillator: press and hold the power button for 3 seconds until the screen goes blank.",
+          "Turn the unit over. Locate the battery compartment on the bottom-rear of the device.",
+          "Slide the battery release latch to the UNLOCK position (slide toward the arrow icon stamped in the plastic).",
+          "Slide the old battery pack out of the compartment. Set aside for disposal per facility hazardous waste protocol.",
+          "Inspect the battery bay: check the 4 gold contact pads for corrosion, discoloration, or debris. Wipe with a dry lint-free cloth if needed.",
+          "Slide the new SurePower battery into the compartment until it clicks into the locked position. The release latch should return to LOCK automatically.",
+          "Turn the unit upright and press the power button. The device will perform an automatic self-test (approximately 15 seconds).",
+          "After self-test completes, verify: screen shows normal monitoring display, battery icon shows 4 bars (if new battery was pre-charged), no error messages displayed.",
+          "Run a manual self-test: press and hold the ANALYZE button for 3 seconds. The device should display 'PASS' for all test categories.",
+        ],
+        specifications: [
+          { parameter: "Expected self-test duration", value: "~15", unit: "seconds" },
+          { parameter: "New battery initial charge", value: "40–60% (factory pre-charge)", unit: "" },
+        ],
+        warnings: [
+          "CAUTION: Do not use batteries that have been stored for more than 12 months without recharging. Deeply discharged lithium-ion batteries may have degraded capacity and should be replaced.",
+          "WARNING: Do not dispose of lithium-ion batteries in regular waste. Follow facility and local regulations for battery recycling/disposal.",
+        ],
+      },
+      {
+        sectionId: "zoll_4_1",
+        title: "4.1 Capacitor Module Service",
+        content: "The high-voltage capacitor module (P/N ZOLL-9650-0801-01) stores defibrillation energy for delivery. It charges to approximately 1700 VDC for a maximum 200J biphasic shock. The capacitor module is rated for 10,000 charge/discharge cycles. If the module fails to charge to target voltage within 10 seconds, or if the charge-to-energy efficiency drops below 85%, the module must be replaced. Charge failure is indicated by the error message 'Charge Failure' on the display and three rapid beeps.",
+        specifications: [
+          { parameter: "Maximum charge voltage", value: "1700", unit: "VDC" },
+          { parameter: "Maximum energy", value: "200", unit: "joules" },
+          { parameter: "Charge time to max energy", value: "< 10", unit: "seconds" },
+          { parameter: "Rated cycle life", value: "10,000", unit: "charge/discharge cycles" },
+          { parameter: "Charge-to-energy efficiency (minimum)", value: "85", unit: "%" },
+          { parameter: "Capacitance", value: "140", tolerance: "+/- 10", unit: "µF" },
+        ],
+        warnings: [
+          "DANGER: The capacitor module can deliver lethal energy. ALWAYS perform the discharge procedure (hold SHOCK for 5 seconds with paddles disconnected) before handling.",
+          "DANGER: Do not short the capacitor terminals. This will cause an explosive discharge that can result in burns, shrapnel injury, or fire.",
+          "WARNING: After removing the capacitor module, wait 5 minutes and verify terminal voltage < 10V with a multimeter before handling or disposing of the module.",
+        ],
+        tools: [
+          "Phillips #2 screwdriver",
+          "Multimeter rated for 2000 VDC",
+          "Insulated gloves rated for 1000V",
+          "ESD wrist strap",
+        ],
+        steps: [
+          "Remove the battery. Perform the capacitor discharge procedure: reconnect battery briefly, press CHARGE, then hold SHOCK for 5 seconds with paddles disconnected. Remove battery again.",
+          "Remove the 8× Phillips screws from the rear housing. Separate the two housing halves.",
+          "Measure voltage across the capacitor terminals with an HV-rated multimeter. Must read < 10 VDC before proceeding.",
+          "Disconnect the 3-wire capacitor cable from the main board (connector J8). Note wire colors and positions.",
+          "Remove the 2× Phillips screws securing the capacitor module bracket to the chassis.",
+          "Lift the capacitor module out. Handle by the bracket only — do not touch the terminals.",
+          "Install the new module in reverse order. Torque bracket screws to 1.2 Nm.",
+          "Reconnect the 3-wire cable to J8. Verify correct wire positions.",
+          "Reassemble housing. Install battery. Power on.",
+          "Run a charge/discharge test from the service menu: verify charge to 200J in < 10 seconds, verify energy delivery within 5% of selected energy.",
+        ],
+      },
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Seeder logic
 // ---------------------------------------------------------------------------
 
@@ -668,10 +1113,21 @@ async function seed(): Promise<void> {
   await guideBatch.commit();
   console.log("  Repair guides seeded successfully.\n");
 
+  // Seed service manuals (V2)
+  console.log(`Seeding ${serviceManuals.length} service manuals...`);
+  const manualBatch = db.batch();
+  for (const manual of serviceManuals) {
+    const ref = db.collection("service_manuals").doc(manual.manualId);
+    manualBatch.set(ref, manual);
+  }
+  await manualBatch.commit();
+  console.log("  Service manuals seeded successfully.\n");
+
   console.log("Seeding complete!");
   console.log(`  - ${suppliers.length} suppliers`);
   console.log(`  - ${parts.length} parts`);
   console.log(`  - ${repairGuides.length} repair guides`);
+  console.log(`  - ${serviceManuals.length} service manuals`);
 }
 
 seed().catch((err) => {
