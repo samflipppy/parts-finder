@@ -27,6 +27,11 @@
   var alternativesList = document.getElementById("alternatives-list");
   var warningsSection = document.getElementById("warnings-section");
   var warningsList = document.getElementById("warnings-list");
+  var repairGuideSection = document.getElementById("repair-guide-section");
+  var repairGuideMeta = document.getElementById("repair-guide-meta");
+  var repairGuideWarnings = document.getElementById("repair-guide-warnings");
+  var repairGuideTools = document.getElementById("repair-guide-tools");
+  var repairGuideSteps = document.getElementById("repair-guide-steps");
   var reasoningTrace = document.getElementById("reasoning-trace");
   var metricsSection = document.getElementById("metrics-section");
   var metricsContent = document.getElementById("metrics-content");
@@ -114,6 +119,51 @@
     } else {
       recommendedPartCard.classList.add("hidden");
       noPartCard.classList.remove("hidden");
+    }
+
+    // Repair guide
+    if (data.repairGuide) {
+      repairGuideSection.classList.remove("hidden");
+
+      // Meta info (title, time, difficulty)
+      repairGuideMeta.innerHTML =
+        '<span class="guide-title">' + escapeHtml(data.repairGuide.title) + '</span>' +
+        '<div class="guide-badges">' +
+          '<span class="badge badge-' + escapeHtml(data.repairGuide.difficulty) + '">' + escapeHtml(data.repairGuide.difficulty) + '</span>' +
+          '<span class="guide-time">' + escapeHtml(data.repairGuide.estimatedTime) + '</span>' +
+        '</div>';
+
+      // Safety warnings
+      if (data.repairGuide.safetyWarnings && data.repairGuide.safetyWarnings.length > 0) {
+        repairGuideWarnings.innerHTML = '';
+        data.repairGuide.safetyWarnings.forEach(function (w) {
+          var div = document.createElement("div");
+          div.className = "warning-box";
+          div.textContent = w;
+          repairGuideWarnings.appendChild(div);
+        });
+        repairGuideWarnings.classList.remove("hidden");
+      } else {
+        repairGuideWarnings.classList.add("hidden");
+      }
+
+      // Tools needed
+      repairGuideTools.innerHTML = '';
+      data.repairGuide.tools.forEach(function (tool) {
+        var li = document.createElement("li");
+        li.textContent = tool;
+        repairGuideTools.appendChild(li);
+      });
+
+      // Steps
+      repairGuideSteps.innerHTML = '';
+      data.repairGuide.steps.forEach(function (step) {
+        var li = document.createElement("li");
+        li.textContent = step;
+        repairGuideSteps.appendChild(li);
+      });
+    } else {
+      repairGuideSection.classList.add("hidden");
     }
 
     // Supplier ranking

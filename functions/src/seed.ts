@@ -11,7 +11,7 @@ dotenv.config();
 
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { Part, Supplier } from "./types";
+import { Part, Supplier, RepairGuide } from "./types";
 
 // Initialize Firebase Admin — uses GOOGLE_APPLICATION_CREDENTIALS or
 // falls back to the default emulator connection when running locally.
@@ -506,6 +506,132 @@ const parts: Part[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Repair Guides
+// ---------------------------------------------------------------------------
+
+const repairGuides: RepairGuide[] = [
+  {
+    partId: "part_001",
+    partNumber: "DRG-8306750",
+    title: "Drager Evita V500/V800 — Fan Module Replacement",
+    estimatedTime: "45–60 minutes",
+    difficulty: "moderate",
+    safetyWarnings: [
+      "Disconnect the ventilator from the patient and switch to a backup ventilator before servicing.",
+      "Unplug from mains power and wait 30 seconds for capacitors to discharge.",
+      "Wear an ESD wrist strap — the main PCB is static-sensitive.",
+    ],
+    tools: [
+      "T10 / T15 Torx screwdrivers",
+      "ESD wrist strap",
+      "Compressed air can",
+      "Multimeter (optional, for verifying fan connector voltage)",
+    ],
+    steps: [
+      "Power down the ventilator and disconnect from mains. Move to a clean, static-safe work surface.",
+      "Remove the rear service panel (6× T10 Torx screws). Set screws aside — they are different lengths for top vs. bottom.",
+      "Locate the fan module in the lower-left compartment. It is a black square assembly with a 4-pin connector.",
+      "Disconnect the 4-pin fan cable from header J14 on the main PCB. Squeeze the latch before pulling — do not force it.",
+      "Remove the 4× T15 Torx screws securing the fan module to the chassis bracket.",
+      "Lift the old fan module out. Use compressed air to clear any dust from the compartment before installing the new one.",
+      "Seat the new fan module into the bracket and secure with the 4× T15 screws. Torque to 0.8 Nm.",
+      "Reconnect the 4-pin cable to header J14 — you should hear the latch click.",
+      "Reattach the rear panel. Power on and enter the service menu (hold INFO + ALARM SILENCE during boot).",
+      "Run the built-in Fan Test from Service > Hardware Tests > Fan Module. Confirm no Error 57/58 codes and fan RPM reads 2800–3200.",
+    ],
+  },
+  {
+    partId: "part_006",
+    partNumber: "PHI-453564243681",
+    title: "Philips IntelliVue MX800 — LCD Display Replacement",
+    estimatedTime: "30–45 minutes",
+    difficulty: "moderate",
+    safetyWarnings: [
+      "Disconnect the monitor from the patient before servicing.",
+      "Unplug power cord. The internal battery will continue to supply power — press and hold the power button for 5 seconds to fully shut down.",
+      "Handle the LCD panel by its edges only — fingerprints on the display surface can cause permanent marks.",
+    ],
+    tools: [
+      "Phillips #2 screwdriver",
+      "Plastic spudger (for prying bezels without scratching)",
+      "Microfiber cloth",
+      "ESD wrist strap",
+    ],
+    steps: [
+      "Power off the monitor fully (hold power button 5 seconds). Disconnect power cord and all patient cables.",
+      "Place monitor face-down on a soft surface. Remove the 4× Phillips screws from the rear housing.",
+      "Carefully separate the rear housing from the front bezel. Start at the bottom edge and work around with a plastic spudger.",
+      "Disconnect the LCD ribbon cable from connector J3 on the video board. Flip the ZIF latch up first, then slide the ribbon out.",
+      "Disconnect the backlight power cable (2-pin white connector near the top of the panel).",
+      "Remove the 6× Phillips screws holding the LCD panel to the bezel frame. Lift the old panel out.",
+      "Clean the bezel frame with a microfiber cloth. Place the new LCD panel and secure with the 6 screws.",
+      "Reconnect the backlight power cable and the LCD ribbon cable (slide in, then press ZIF latch down).",
+      "Reassemble the rear housing and tighten the 4 screws.",
+      "Power on. The display should show the Philips boot logo within 10 seconds. If you see artifacts or no display, reseat the ribbon cable.",
+    ],
+  },
+  {
+    partId: "part_011",
+    partNumber: "GE-2350400-2",
+    title: "GE Optima CT660 — X-Ray Tube Replacement",
+    estimatedTime: "4–6 hours",
+    difficulty: "advanced",
+    safetyWarnings: [
+      "This procedure requires a GE-certified field service engineer. High voltages (up to 140kV) are present in the tube housing.",
+      "Allow the tube to cool for at least 2 hours before removal — the anode can exceed 200°C.",
+      "Wear lead-lined gloves and follow facility radiation safety protocols when handling the tube assembly.",
+      "The tube assembly weighs approximately 65 lbs (30 kg) — use a tube lift sling for safe handling.",
+    ],
+    tools: [
+      "GE CT Service Key + Service software login",
+      "Tube lift sling rated for 100 lbs",
+      "13mm, 15mm, 17mm socket set",
+      "Torque wrench (for HV cable connections)",
+      "Coolant drain pan and 5 gallons of GE-approved CT coolant",
+      "Multimeter rated for high voltage",
+    ],
+    steps: [
+      "Shut down the CT system via the operator console. Turn off the main circuit breaker and lock-out/tag-out per facility policy.",
+      "Open the gantry covers (left and right side panels). Drain the tube cooling loop into the drain pan by disconnecting the coolant lines at the quick-disconnect fittings.",
+      "Disconnect the high-voltage cables from the tube housing — the cathode cable (marked −) and anode cable (marked +). Use insulated tools.",
+      "Disconnect the stator drive cable and the rotor sense cable from the tube housing connectors.",
+      "Attach the tube lift sling to the two lifting points on the tube housing. Support the full weight before removing mounting bolts.",
+      "Remove the 4× 17mm mounting bolts that secure the tube housing to the gantry cradle.",
+      "Using the lift sling, carefully lower the old tube out of the gantry. Set on a padded surface.",
+      "Position the new tube assembly in the cradle using the lift sling. Align the mounting holes and hand-start all 4 bolts before torquing.",
+      "Torque mounting bolts to 45 Nm in a cross pattern. Reconnect stator, rotor sense, and HV cables.",
+      "Reconnect coolant lines and refill the cooling system with GE-approved coolant. Bleed air from the system.",
+      "Run the GE CT tube conditioning protocol from the service console — this gradually seasons the new tube with increasing kV/mA exposures over approximately 30 minutes.",
+      "Perform a full calibration: air calibration, detector calibration, and mA linearity check. Verify no arc fault or mA calibration errors.",
+    ],
+  },
+  {
+    partId: "part_015",
+    partNumber: "ZOLL-8019-0535-01",
+    title: "Zoll R Series — Battery Pack Replacement",
+    estimatedTime: "5–10 minutes",
+    difficulty: "easy",
+    safetyWarnings: [
+      "Remove the defibrillator from clinical use before swapping the battery.",
+      "Do not dispose of lithium-ion batteries in regular trash. Follow your facility's hazardous waste disposal protocol.",
+    ],
+    tools: [
+      "No tools required — the battery is tool-free, slide-in design",
+    ],
+    steps: [
+      "Power off the defibrillator by pressing and holding the power button for 3 seconds.",
+      "Turn the unit over. Locate the battery compartment on the bottom rear of the device.",
+      "Slide the battery release latch to the UNLOCK position (slide toward the arrow icon).",
+      "Slide the old battery pack out of the compartment.",
+      "Inspect the battery bay contacts for corrosion or debris. Wipe clean with a dry cloth if needed.",
+      "Slide the new SurePower battery into the compartment until it clicks into the locked position.",
+      "Turn the unit upright and power on. Verify the battery icon on screen shows a full charge (4 bars).",
+      "Run a quick self-test: press and hold the ANALYZE button to trigger the automatic test sequence. Confirm 'PASS' on screen.",
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Seeder logic
 // ---------------------------------------------------------------------------
 
@@ -532,9 +658,20 @@ async function seed(): Promise<void> {
   await partBatch.commit();
   console.log("  Parts seeded successfully.\n");
 
+  // Seed repair guides
+  console.log(`Seeding ${repairGuides.length} repair guides...`);
+  const guideBatch = db.batch();
+  for (const guide of repairGuides) {
+    const ref = db.collection("repair_guides").doc(guide.partId);
+    guideBatch.set(ref, guide);
+  }
+  await guideBatch.commit();
+  console.log("  Repair guides seeded successfully.\n");
+
   console.log("Seeding complete!");
   console.log(`  - ${suppliers.length} suppliers`);
   console.log(`  - ${parts.length} parts`);
+  console.log(`  - ${repairGuides.length} repair guides`);
 }
 
 seed().catch((err) => {

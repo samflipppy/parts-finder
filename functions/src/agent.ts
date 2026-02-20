@@ -1,7 +1,7 @@
 import { genkit, z } from "genkit";
 import { googleAI } from "@genkit-ai/googleai";
 import { getFirestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
-import type { Part, Supplier, AgentResponse } from "./types";
+import type { Part, Supplier, RepairGuide, AgentResponse } from "./types";
 import {
   MetricsCollector,
   setActiveCollector,
@@ -58,6 +58,16 @@ const AgentResponseSchema = z.object({
       description: z.string(),
       avgPrice: z.number(),
       criticality: z.string(),
+    })
+    .nullable(),
+  repairGuide: z
+    .object({
+      title: z.string(),
+      estimatedTime: z.string(),
+      difficulty: z.string(),
+      safetyWarnings: z.array(z.string()),
+      steps: z.array(z.string()),
+      tools: z.array(z.string()),
     })
     .nullable(),
   supplierRanking: z.array(
@@ -257,6 +267,66 @@ const getSuppliers = ai.defineTool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool 3: getRepairGuide
+// ---------------------------------------------------------------------------
+
+const RepairGuideSchema = z.object({
+  partId: z.string(),
+  partNumber: z.string(),
+  title: z.string(),
+  estimatedTime: z.string(),
+  difficulty: z.enum(["easy", "moderate", "advanced"]),
+  safetyWarnings: z.array(z.string()),
+  steps: z.array(z.string()),
+  tools: z.array(z.string()),
+});
+
+const getRepairGuide = ai.defineTool(
+  {
+    name: "getRepairGuide",
+    description:
+      "Fetch the step-by-step repair guide for a specific part. " +
+      "Call this after identifying the recommended part to provide installation/replacement instructions.",
+    inputSchema: z.object({
+      partId: z
+        .string()
+        .describe("The part document ID, e.g. 'part_001'"),
+    }),
+    outputSchema: RepairGuideSchema.nullable(),
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+    console.log("[getRepairGuide] Looking up guide for:", input.partId);
+
+    const doc = await db.collection("repair_guides").doc(input.partId).get();
+
+    const latencyMs = Date.now() - startTime;
+
+    if (!doc.exists) {
+      console.log(`[getRepairGuide] No guide found for ${input.partId} (${latencyMs}ms)`);
+
+      const collector = getActiveCollector();
+      if (collector) {
+        collector.recordToolCall("getRepairGuide", input as Record<string, unknown>, 0, latencyMs);
+      }
+
+      return null;
+    }
+
+    const guide = doc.data() as RepairGuide;
+    console.log(`[getRepairGuide] Found "${guide.title}" — ${guide.steps.length} steps (${latencyMs}ms)`);
+
+    const collector = getActiveCollector();
+    if (collector) {
+      collector.recordToolCall("getRepairGuide", input as Record<string, unknown>, 1, latencyMs);
+    }
+
+    return guide;
+  }
+);
+
+// ---------------------------------------------------------------------------
 // System prompt
 // ---------------------------------------------------------------------------
 
@@ -275,11 +345,13 @@ When a technician describes a problem, follow these steps IN ORDER:
    - Delivery Speed: 30% weight (invert: score = 1 - (days / 5), clamped to 0-1)
    - Return Rate: 20% weight (invert: score = 1 - (returnRate / 0.1), clamped to 0-1)
 6. For parts with criticality "critical" or "high", adjust weights to: Quality 60%, Delivery 25%, Return Rate 15%. Add a warning that the technician should verify compatibility before ordering.
-7. If no matching parts are found after multiple search attempts, set confidence to "low" and explain that the part may not be in the database.
+7. ALWAYS call getRepairGuide with the recommended part's id (e.g. "part_001") to check if a repair guide is available. If the tool returns a guide, include it in the repairGuide field of your response. If it returns null, set repairGuide to null.
+8. If no matching parts are found after multiple search attempts, set confidence to "low" and explain that the part may not be in the database. Set repairGuide to null.
 
 CRITICAL RULES:
 - You MUST call searchParts before generating any response.
 - You MUST call getSuppliers if searchParts returned results.
+- You MUST call getRepairGuide if you have a recommended part.
 - NEVER return a diagnosis without first using the tools.
 - Always respond with the full structured JSON output. Be specific in your diagnosis and reasoning. Think step by step.`;
 
@@ -299,7 +371,7 @@ export const diagnoseAndRecommend = ai.defineFlow(
     const response = await ai.generate({
       system: SYSTEM_PROMPT,
       prompt: description,
-      tools: [searchParts, getSuppliers],
+      tools: [searchParts, getSuppliers, getRepairGuide],
       output: { schema: AgentResponseSchema },
       maxTurns: 5,
     });
@@ -310,6 +382,7 @@ export const diagnoseAndRecommend = ai.defineFlow(
       return {
         diagnosis: "Unable to process the request. The AI model did not return a structured response.",
         recommendedPart: null,
+        repairGuide: null,
         supplierRanking: [],
         alternativeParts: [],
         confidence: "low",

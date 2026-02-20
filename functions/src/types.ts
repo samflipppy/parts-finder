@@ -23,6 +23,17 @@ export interface Supplier {
   inStock: boolean;
 }
 
+export interface RepairGuide {
+  partId: string;
+  partNumber: string;
+  title: string;
+  estimatedTime: string;       // e.g. "45–60 minutes"
+  difficulty: "easy" | "moderate" | "advanced";
+  safetyWarnings: string[];
+  steps: string[];
+  tools: string[];             // tools/equipment needed
+}
+
 export interface AgentResponse {
   diagnosis: string;
   recommendedPart: {
@@ -31,6 +42,14 @@ export interface AgentResponse {
     description: string;
     avgPrice: number;
     criticality: string;
+  } | null;
+  repairGuide: {
+    title: string;
+    estimatedTime: string;
+    difficulty: string;
+    safetyWarnings: string[];
+    steps: string[];
+    tools: string[];
   } | null;
   supplierRanking: Array<{
     supplierName: string;
