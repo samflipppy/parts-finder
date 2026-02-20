@@ -8,7 +8,7 @@
  * 1. Load all service manuals from Firestore
  * 2. For each section, build a text string that captures what it's about
  * 3. Send that text to an embedding model (Gemini text-embedding-004)
- *    → The model returns a 768-dimensional vector (array of 768 numbers)
+ *    → The model returns a 3072-dimensional vector (array of 3072 numbers)
  *    → Sections about similar topics will have similar vectors
  * 4. Store the vector alongside the section data in Firestore
  *
@@ -95,14 +95,10 @@ function buildEmbeddingText(
 
 /**
  * Call Gemini's embedding API for a single text.
- * Returns a 768-dimensional vector.
+ * Returns a 3072-dimensional vector (gemini-embedding-001 default).
  */
 async function embedText(text: string): Promise<number[]> {
-  // Force apiVersion "v1" — the default "v1beta" doesn't list text-embedding-004
-  const model = genai.getGenerativeModel(
-    { model: "text-embedding-004" },
-    { apiVersion: "v1" }
-  );
+  const model = genai.getGenerativeModel({ model: "gemini-embedding-001" });
   const result = await model.embedContent(text);
   return result.embedding.values;
 }
@@ -185,7 +181,7 @@ async function main() {
   // Summary
   console.log("=== Done! ===");
   console.log(`Embedded ${embeddings.length} sections from ${manuals.length} manuals.`);
-  console.log("Each embedding is a 768-dimensional vector from text-embedding-004.");
+  console.log("Each embedding is a 3072-dimensional vector from gemini-embedding-001.");
   console.log("\nThe searchManual tool will now use vector similarity to find relevant sections.");
   console.log("Run your chat to see it in action!\n");
 }

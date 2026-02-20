@@ -531,7 +531,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 // ---------------------------------------------------------------------------
 // Embed a query string using Genkit's embed() API.
-// Uses the same model (text-embedding-004) that was used to embed the sections.
+// Uses the same model (gemini-embedding-001) that was used to embed the sections.
 // This is critical — query and documents MUST use the same embedding model.
 // ---------------------------------------------------------------------------
 
@@ -539,7 +539,7 @@ async function embedQuery(text: string): Promise<number[]> {
   // ai.embed() returns Embedding[] — an array of { embedding: number[] }
   // We pass a single content string, so we get back one embedding.
   const result = await ai.embed({
-    embedder: "googleai/text-embedding-004",
+    embedder: "googleai/gemini-embedding-001",
     content: text,
   });
   return result[0].embedding;

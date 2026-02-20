@@ -79,7 +79,7 @@ export interface ServiceManual {
 
 // This is a "flattened" section stored alongside its embedding vector.
 // Each manual section becomes one document in the section_embeddings collection.
-// The embedding is a 768-dimensional vector from Gemini's text-embedding-004.
+// The embedding is a 3072-dimensional vector from Gemini's gemini-embedding-001.
 export interface SectionEmbedding {
   // Identifiers — which manual and section this came from
   manualId: string;
@@ -92,7 +92,7 @@ export interface SectionEmbedding {
   // The text that was embedded (title + content + specs + warnings combined)
   embeddedText: string;
 
-  // The embedding vector itself — 768 floats from text-embedding-004
+  // The embedding vector itself — 3072 floats from gemini-embedding-001
   embedding: number[];
 
   // The original section data (so we can return it without a second lookup)
