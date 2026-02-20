@@ -74,6 +74,36 @@ export interface ServiceManual {
 }
 
 // ---------------------------------------------------------------------------
+// V2: Section embeddings for RAG (vector search)
+// ---------------------------------------------------------------------------
+
+// This is a "flattened" section stored alongside its embedding vector.
+// Each manual section becomes one document in the section_embeddings collection.
+// The embedding is a 768-dimensional vector from Gemini's text-embedding-004.
+export interface SectionEmbedding {
+  // Identifiers — which manual and section this came from
+  manualId: string;
+  sectionId: string;
+  manualTitle: string;
+  sectionTitle: string;
+  manufacturer: string;
+  equipmentName: string;
+
+  // The text that was embedded (title + content + specs + warnings combined)
+  embeddedText: string;
+
+  // The embedding vector itself — 768 floats from text-embedding-004
+  embedding: number[];
+
+  // The original section data (so we can return it without a second lookup)
+  content: string;
+  specifications?: ManualSpecification[];
+  warnings?: string[];
+  steps?: string[];
+  tools?: string[];
+}
+
+// ---------------------------------------------------------------------------
 // V2: Chat messages for multi-turn conversation
 // ---------------------------------------------------------------------------
 

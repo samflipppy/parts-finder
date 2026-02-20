@@ -1,7 +1,7 @@
 import { genkit, z } from "genkit";
 import { googleAI } from "@genkit-ai/googleai";
 import { getFirestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
-import type { Part, Supplier, RepairGuide, AgentResponse, ServiceManual, ChatMessage, ChatAgentResponse } from "./types";
+import type { Part, Supplier, RepairGuide, AgentResponse, ServiceManual, SectionEmbedding, ChatMessage, ChatAgentResponse } from "./types";
 import {
   MetricsCollector,
   setActiveCollector,
@@ -480,7 +480,7 @@ const ChatAgentResponseSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// V2 Tool: searchManual
+// V2 Tool: searchManual (RAG — vector search with cosine similarity)
 // ---------------------------------------------------------------------------
 
 const ManualSectionResultSchema = z.object({
@@ -503,6 +503,53 @@ const ManualSectionResultSchema = z.object({
   steps: z.array(z.string()).optional(),
   tools: z.array(z.string()).optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Cosine similarity — the core math behind vector search.
+//
+// Two vectors pointing in the same direction = similar meaning.
+// Returns a number between -1 and 1:
+//   1.0 = identical meaning
+//   0.0 = completely unrelated
+//  -1.0 = opposite meaning (rare with text embeddings)
+//
+// This is literally what Pinecone/Weaviate/ChromaDB do under the hood,
+// just with indexing tricks (ANN) to avoid checking every vector.
+// ---------------------------------------------------------------------------
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// ---------------------------------------------------------------------------
+// Embed a query string using Genkit's embed() API.
+// Uses the same model (text-embedding-004) that was used to embed the sections.
+// This is critical — query and documents MUST use the same embedding model.
+// ---------------------------------------------------------------------------
+
+async function embedQuery(text: string): Promise<number[]> {
+  // ai.embed() returns Embedding[] — an array of { embedding: number[] }
+  // We pass a single content string, so we get back one embedding.
+  const result = await ai.embed({
+    embedder: "googleai/text-embedding-004",
+    content: text,
+  });
+  return result[0].embedding;
+}
+
+// How many results to return from vector search
+const TOP_K = 5;
+
+// Minimum similarity score to consider a match (0-1 scale)
+const SIMILARITY_THRESHOLD = 0.3;
 
 const searchManual = ai.defineTool(
   {
@@ -532,14 +579,130 @@ const searchManual = ai.defineTool(
     const db = getFirestore();
     console.log("[searchManual] Query params:", JSON.stringify(input));
 
-    const snapshot = await db.collection("service_manuals").get();
-    let manuals: ServiceManual[] = snapshot.docs.map(
+    // -----------------------------------------------------------------------
+    // RAG RETRIEVAL PIPELINE
+    //
+    // Step 1: Load pre-computed embeddings from Firestore
+    // Step 2: Filter by manufacturer/equipment (structured search — narrows scope)
+    // Step 3: Embed the query using the same model
+    // Step 4: Compute cosine similarity against each section embedding
+    // Step 5: Return the top-K most similar sections
+    //
+    // If no embeddings exist (script hasn't been run), fall back to keyword search.
+    // -----------------------------------------------------------------------
+
+    // Step 1: Try to load embeddings
+    const embSnap = await db.collection("section_embeddings").get();
+    const allEmbeddings = embSnap.docs.map(
+      (doc: QueryDocumentSnapshot) => doc.data() as SectionEmbedding
+    );
+
+    const useVectorSearch = allEmbeddings.length > 0 && !!input.keyword;
+    console.log(
+      `[searchManual] ${allEmbeddings.length} embeddings loaded, ` +
+        `vector search: ${useVectorSearch ? "YES" : "NO (falling back to keyword)"}`
+    );
+
+    // Step 2: Filter by manufacturer/equipment (same as before — structured filters)
+    let candidates = useVectorSearch ? allEmbeddings : [];
+
+    if (useVectorSearch) {
+      if (input.manufacturer) {
+        const term = input.manufacturer.toLowerCase();
+        candidates = candidates.filter(
+          (e) => e.manufacturer.toLowerCase() === term
+        );
+        console.log(`[searchManual] After manufacturer filter: ${candidates.length}`);
+      }
+      if (input.equipmentName) {
+        const term = input.equipmentName.toLowerCase();
+        candidates = candidates.filter(
+          (e) => e.equipmentName.toLowerCase().includes(term)
+        );
+        console.log(`[searchManual] After equipment filter: ${candidates.length}`);
+      }
+    }
+
+    type SectionResult = z.infer<typeof ManualSectionResultSchema>;
+
+    if (useVectorSearch && candidates.length > 0) {
+      // Step 3: Embed the query
+      const queryText = [
+        input.manufacturer,
+        input.equipmentName,
+        input.keyword,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      console.log(`[searchManual] Embedding query: "${queryText}"`);
+      const queryEmbedding = await embedQuery(queryText);
+      console.log(`[searchManual] Query embedded (${queryEmbedding.length} dims)`);
+
+      // Step 4: Score every candidate section by cosine similarity
+      const scored = candidates.map((emb) => ({
+        emb,
+        score: cosineSimilarity(queryEmbedding, emb.embedding),
+      }));
+
+      // Sort by score descending
+      scored.sort((a, b) => b.score - a.score);
+
+      // Log top scores for debugging
+      scored.slice(0, 8).forEach((s, i) => {
+        console.log(
+          `[searchManual]   #${i + 1} score=${s.score.toFixed(4)} → ${s.emb.sectionTitle}`
+        );
+      });
+
+      // Step 5: Take top-K above threshold
+      const topResults = scored
+        .filter((s) => s.score >= SIMILARITY_THRESHOLD)
+        .slice(0, TOP_K);
+
+      const results: SectionResult[] = topResults.map((s) => ({
+        manualId: s.emb.manualId,
+        manualTitle: s.emb.manualTitle,
+        sectionId: s.emb.sectionId,
+        sectionTitle: s.emb.sectionTitle,
+        content: s.emb.content,
+        specifications: s.emb.specifications,
+        warnings: s.emb.warnings,
+        steps: s.emb.steps,
+        tools: s.emb.tools,
+      }));
+
+      const latencyMs = Date.now() - startTime;
+      console.log(
+        `[searchManual] Vector search returning ${results.length} sections (${latencyMs}ms)`
+      );
+
+      const collector = getActiveCollector();
+      if (collector) {
+        collector.recordToolCall(
+          "searchManual",
+          input as Record<string, unknown>,
+          results.length,
+          latencyMs
+        );
+      }
+
+      return results;
+    }
+
+    // -----------------------------------------------------------------------
+    // FALLBACK: Keyword search (used when no embeddings exist or no keyword)
+    // This is the original V2 search — still useful for exact code matches
+    // like "Error 57" where keyword search outperforms semantic search.
+    // -----------------------------------------------------------------------
+
+    console.log("[searchManual] Using keyword fallback search");
+
+    const manualSnap = await db.collection("service_manuals").get();
+    let manuals: ServiceManual[] = manualSnap.docs.map(
       (doc: QueryDocumentSnapshot) => doc.data() as ServiceManual
     );
 
-    console.log(`[searchManual] Loaded ${manuals.length} manuals`);
-
-    // Filter manuals by manufacturer/equipment
     if (input.manufacturer) {
       const term = input.manufacturer.toLowerCase();
       manuals = manuals.filter(
@@ -558,13 +721,11 @@ const searchManual = ai.defineTool(
       );
     }
 
-    // Search through sections for keyword matches
-    type SectionResult = z.infer<typeof ManualSectionResultSchema>;
     const results: SectionResult[] = [];
 
     for (const manual of manuals) {
       for (const section of manual.sections) {
-        let matches = !input.keyword; // if no keyword, include all sections from matched manuals
+        let matches = !input.keyword;
 
         if (input.keyword) {
           const kw = input.keyword.toLowerCase();
@@ -598,7 +759,7 @@ const searchManual = ai.defineTool(
 
     const latencyMs = Date.now() - startTime;
     console.log(
-      `[searchManual] Returning ${results.length} sections (${latencyMs}ms)`
+      `[searchManual] Keyword fallback returning ${results.length} sections (${latencyMs}ms)`
     );
 
     const collector = getActiveCollector();
