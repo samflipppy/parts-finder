@@ -239,8 +239,133 @@
       bubble.appendChild(conf);
     }
 
+    // RAG trace (collapsible, inside bubble)
+    if (data._metrics && data._metrics.toolCalls && data._metrics.toolCalls.length > 0) {
+      var traceEl = renderRAGTrace(data._metrics.toolCalls);
+      if (traceEl) {
+        bubble.appendChild(traceEl);
+      }
+    }
+
     chatMessages.appendChild(bubble);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function renderRAGTrace(toolCalls) {
+    var html = '';
+
+    toolCalls.forEach(function (tc) {
+      html += '<div class="trace-tool-block">';
+      html += '<div class="trace-tool-header">' + escapeHtml(tc.toolName) + '</div>';
+
+      // Query params
+      if (tc.input && Object.keys(tc.input).length > 0) {
+        var params = Object.keys(tc.input).map(function (key) {
+          return escapeHtml(key) + '=' + escapeHtml(JSON.stringify(tc.input[key]));
+        }).join(', ');
+        html += '<div class="trace-log-line">' +
+          '<span class="trace-prefix">[' + escapeHtml(tc.toolName) + ']</span> ' +
+          'Query: {' + params + '}' +
+          '</div>';
+      }
+
+      // RAG-specific trace
+      if (tc.ragTrace) {
+        var rag = tc.ragTrace;
+
+        // Search mode
+        html += '<div class="trace-log-line">' +
+          '<span class="trace-prefix">[searchManual]</span> ' +
+          'Mode: <strong>' + escapeHtml(rag.searchMode) + '</strong>' +
+          (rag.searchMode === 'vector' ? ' (semantic RAG)' : ' (keyword fallback)') +
+          '</div>';
+
+        if (rag.searchMode === 'vector') {
+          // Embeddings loaded
+          html += '<div class="trace-log-line">' +
+            '<span class="trace-prefix">[searchManual]</span> ' +
+            'Loaded <strong>' + rag.embeddingsLoaded + '</strong> section embeddings' +
+            '</div>';
+
+          // Filter narrowing
+          if (rag.candidatesAfterFilter < rag.embeddingsLoaded) {
+            html += '<div class="trace-log-line trace-filter-line">' +
+              '<span class="trace-prefix">[searchManual]</span> ' +
+              'After metadata filter: ' +
+              '<span class="trace-narrowing">' + rag.embeddingsLoaded + ' &rarr; ' + rag.candidatesAfterFilter + ' candidates</span>' +
+              '</div>';
+          }
+
+          // Query text
+          html += '<div class="trace-log-line">' +
+            '<span class="trace-prefix">[searchManual]</span> ' +
+            'Embedded query: <span class="trace-filter-val">&quot;' + escapeHtml(rag.queryText) + '&quot;</span>' +
+            '</div>';
+
+          // Cosine similarity scores
+          if (rag.topScores && rag.topScores.length > 0) {
+            html += '<div class="trace-log-line">' +
+              '<span class="trace-prefix">[searchManual]</span> ' +
+              'Cosine similarity scores:' +
+              '</div>';
+
+            rag.topScores.forEach(function (s, idx) {
+              var passed = s.score >= rag.similarityThreshold;
+              var icon = passed ? '\u2713' : '\u2717';
+              var color = passed ? '#059669' : '#9ca3af';
+              html += '<div class="trace-log-line rag-score-line">' +
+                '<span style="color:' + color + '">' + icon + '</span> ' +
+                '#' + (idx + 1) + ' ' +
+                '<span class="' + (passed ? 'trace-narrowing' : 'trace-latency') + '">' +
+                s.score.toFixed(4) + '</span> &rarr; ' +
+                escapeHtml(s.sectionTitle) +
+                '</div>';
+            });
+
+            // Threshold summary
+            html += '<div class="trace-log-line trace-filter-line">' +
+              '<span class="trace-prefix">[searchManual]</span> ' +
+              'Threshold: <span class="trace-filter-val">' + rag.similarityThreshold + '</span> &rarr; ' +
+              '<strong>' + rag.resultsAboveThreshold + '</strong> of ' + rag.topScores.length + ' passed' +
+              '</div>';
+          }
+        } else {
+          // Keyword fallback reason
+          var reason = rag.embeddingsLoaded === 0
+            ? 'No embeddings in Firestore'
+            : 'No keyword provided for semantic search';
+          html += '<div class="trace-log-line">' +
+            '<span class="trace-prefix">[searchManual]</span> ' +
+            'Reason: ' + reason +
+            '</div>';
+        }
+      }
+
+      // Result + latency
+      html += '<div class="trace-log-line trace-result-line">' +
+        '<span class="trace-prefix">[' + escapeHtml(tc.toolName) + ']</span> ' +
+        'Returned <strong>' + tc.resultCount + '</strong> results ' +
+        '<span class="trace-latency">(' + tc.latencyMs + 'ms)</span>' +
+        '</div>';
+
+      html += '</div>'; // .trace-tool-block
+    });
+
+    if (!html) return null;
+
+    var section = document.createElement('details');
+    section.className = 'trace-section chat-trace';
+
+    var summary = document.createElement('summary');
+    summary.textContent = 'Agent Reasoning Trace';
+    section.appendChild(summary);
+
+    var content = document.createElement('div');
+    content.className = 'trace-tool-logs';
+    content.innerHTML = html;
+    section.appendChild(content);
+
+    return section;
   }
 
   // ---- Helpers ----

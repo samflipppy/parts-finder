@@ -8,6 +8,7 @@ import {
   getActiveCollector,
   saveMetrics,
   type FilterStep,
+  type RAGTraceData,
   type RequestMetrics,
 } from "./metrics";
 
@@ -679,11 +680,26 @@ const searchManual = ai.defineTool(
 
       const collector = getActiveCollector();
       if (collector) {
+        const ragTrace: RAGTraceData = {
+          searchMode: "vector",
+          embeddingsLoaded: allEmbeddings.length,
+          candidatesAfterFilter: candidates.length,
+          queryText,
+          topScores: scored.slice(0, 8).map((s) => ({
+            sectionTitle: s.emb.sectionTitle,
+            score: parseFloat(s.score.toFixed(4)),
+          })),
+          similarityThreshold: SIMILARITY_THRESHOLD,
+          resultsAboveThreshold: topResults.length,
+          topK: TOP_K,
+        };
         collector.recordToolCall(
           "searchManual",
           input as Record<string, unknown>,
           results.length,
-          latencyMs
+          latencyMs,
+          undefined,
+          ragTrace
         );
       }
 
@@ -764,11 +780,23 @@ const searchManual = ai.defineTool(
 
     const collector = getActiveCollector();
     if (collector) {
+      const ragTrace: RAGTraceData = {
+        searchMode: "keyword",
+        embeddingsLoaded: allEmbeddings.length,
+        candidatesAfterFilter: 0,
+        queryText: input.keyword || "",
+        topScores: [],
+        similarityThreshold: SIMILARITY_THRESHOLD,
+        resultsAboveThreshold: 0,
+        topK: TOP_K,
+      };
       collector.recordToolCall(
         "searchManual",
         input as Record<string, unknown>,
         results.length,
-        latencyMs
+        latencyMs,
+        undefined,
+        ragTrace
       );
     }
 

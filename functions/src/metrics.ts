@@ -19,6 +19,17 @@ export interface FilterStep {
   remaining: number; // how many results survived this filter
 }
 
+export interface RAGTraceData {
+  searchMode: "vector" | "keyword";
+  embeddingsLoaded: number;
+  candidatesAfterFilter: number;
+  queryText: string;
+  topScores: Array<{ sectionTitle: string; score: number }>;
+  similarityThreshold: number;
+  resultsAboveThreshold: number;
+  topK: number;
+}
+
 export interface ToolCallMetric {
   toolName: string;
   input: Record<string, unknown>;
@@ -26,6 +37,7 @@ export interface ToolCallMetric {
   latencyMs: number;
   timestamp: string;
   filterSteps?: FilterStep[]; // per-filter narrowing trace (searchParts only)
+  ragTrace?: RAGTraceData;    // RAG pipeline trace (searchManual only)
 }
 
 export interface RequestMetrics {
@@ -85,7 +97,8 @@ export class MetricsCollector {
     input: Record<string, unknown>,
     resultCount: number,
     latencyMs: number,
-    filterSteps?: FilterStep[]
+    filterSteps?: FilterStep[],
+    ragTrace?: RAGTraceData
   ): void {
     this.toolCalls.push({
       toolName,
@@ -94,6 +107,7 @@ export class MetricsCollector {
       latencyMs,
       timestamp: new Date().toISOString(),
       filterSteps,
+      ragTrace,
     });
 
     console.log(
