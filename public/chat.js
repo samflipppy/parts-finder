@@ -1,5 +1,5 @@
 /**
- * PartsFinder — Diagnostic Partner chat UI.
+ * PartsFinder — Repair Assistant chat UI.
  * Vanilla JS. Talks to POST /api/chat.
  */
 (function () {
@@ -21,6 +21,24 @@
 
   // Pending image attachment (base64 string or null)
   var pendingImage = null;
+
+  // ---- Initial greeting ----
+
+  (function showGreeting() {
+    var bubble = document.createElement("div");
+    bubble.className = "chat-bubble chat-bubble-assistant greeting-bubble";
+
+    var msg = document.createElement("div");
+    msg.className = "bubble-text";
+    msg.textContent =
+      "Hey! I'm your Repair Assistant — think of me as the colleague who " +
+      "always has the service manual open.\n\n" +
+      "What equipment are you working on? Give me the make and model, and " +
+      "tell me what's going on — error codes, symptoms, anything you've noticed.";
+    bubble.appendChild(msg);
+
+    chatMessages.appendChild(bubble);
+  })();
 
   // ---- Event listeners ----
 
@@ -218,17 +236,26 @@
       });
     }
 
-    // If this was a diagnosis with a recommended part, show a compact card
+    // Recommended part card with Buy button
     if (data.recommendedPart) {
-      var partCard = document.createElement("div");
-      partCard.className = "bubble-part-card";
-      partCard.innerHTML =
-        '<div class="part-card-title">Recommended Part</div>' +
-        '<div class="part-card-row"><span class="part-card-label">Name</span><span>' + escapeHtml(data.recommendedPart.name) + '</span></div>' +
-        '<div class="part-card-row"><span class="part-card-label">P/N</span><span class="mono">' + escapeHtml(data.recommendedPart.partNumber) + '</span></div>' +
-        '<div class="part-card-row"><span class="part-card-label">Price</span><span>$' + data.recommendedPart.avgPrice.toLocaleString() + '</span></div>' +
-        '<div class="part-card-row"><span class="part-card-label">Criticality</span><span class="badge badge-' + escapeHtml(data.recommendedPart.criticality) + '">' + escapeHtml(data.recommendedPart.criticality) + '</span></div>';
-      bubble.appendChild(partCard);
+      bubble.appendChild(renderPartCard(data.recommendedPart, "Recommended Part"));
+    }
+
+    // Alternative parts
+    if (data.alternativeParts && data.alternativeParts.length > 0) {
+      var altsDiv = document.createElement("div");
+      altsDiv.className = "alternatives-section";
+
+      var altsHeader = document.createElement("div");
+      altsHeader.className = "refs-header";
+      altsHeader.textContent = "Alternatives";
+      altsDiv.appendChild(altsHeader);
+
+      data.alternativeParts.forEach(function (alt) {
+        altsDiv.appendChild(renderAltPartCard(alt));
+      });
+
+      bubble.appendChild(altsDiv);
     }
 
     // Confidence badge (for diagnosis/guidance)
@@ -249,6 +276,92 @@
 
     chatMessages.appendChild(bubble);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function renderPartCard(part, label) {
+    var card = document.createElement("div");
+    card.className = "bubble-part-card";
+
+    card.innerHTML =
+      '<div class="part-card-title">' + escapeHtml(label) + '</div>' +
+      '<div class="part-card-row"><span class="part-card-label">Name</span><span>' + escapeHtml(part.name) + '</span></div>' +
+      '<div class="part-card-row"><span class="part-card-label">P/N</span><span class="mono">' + escapeHtml(part.partNumber) + '</span></div>' +
+      '<div class="part-card-row"><span class="part-card-label">Price</span><span>$' + (part.avgPrice || 0).toLocaleString() + '</span></div>' +
+      '<div class="part-card-row"><span class="part-card-label">Criticality</span><span class="badge badge-' + escapeHtml(part.criticality || 'standard') + '">' + escapeHtml(part.criticality || 'standard') + '</span></div>';
+
+    var buyBtn = document.createElement("button");
+    buyBtn.className = "buy-btn";
+    buyBtn.type = "button";
+    buyBtn.textContent = "Buy Part";
+    buyBtn.addEventListener("click", function () {
+      showBuyPlaceholder(part);
+    });
+    card.appendChild(buyBtn);
+
+    return card;
+  }
+
+  function renderAltPartCard(alt) {
+    var card = document.createElement("div");
+    card.className = "bubble-alt-card";
+
+    card.innerHTML =
+      '<div class="alt-card-info">' +
+        '<div class="alt-card-name">' + escapeHtml(alt.name) + '</div>' +
+        '<div class="alt-card-pn mono">' + escapeHtml(alt.partNumber) + '</div>' +
+        '<div class="alt-card-reason">' + escapeHtml(alt.reason) + '</div>' +
+      '</div>';
+
+    var buyBtn = document.createElement("button");
+    buyBtn.className = "buy-btn buy-btn-small";
+    buyBtn.type = "button";
+    buyBtn.textContent = "Buy";
+    buyBtn.addEventListener("click", function () {
+      showBuyPlaceholder(alt);
+    });
+    card.appendChild(buyBtn);
+
+    return card;
+  }
+
+  function showBuyPlaceholder(part) {
+    // Remove any existing toast
+    var existing = document.querySelector('.buy-toast');
+    if (existing) existing.remove();
+
+    var toast = document.createElement("div");
+    toast.className = "buy-toast";
+    toast.innerHTML =
+      '<div class="buy-toast-inner">' +
+        '<div class="buy-toast-title">To be continued...</div>' +
+        '<div class="buy-toast-body">' +
+          'You clicked buy on <strong>' + escapeHtml(part.partNumber || part.name) + '</strong>! ' +
+          'This button will connect to Part Source\'s marketplace — ' +
+          'think of it as Amazon for medical device parts. ' +
+          'For now, just imagine a shopping cart filling up.' +
+        '</div>' +
+        '<button class="buy-toast-close" type="button">Got it</button>' +
+      '</div>';
+
+    document.body.appendChild(toast);
+
+    // Trigger animation
+    requestAnimationFrame(function () {
+      toast.classList.add("buy-toast-visible");
+    });
+
+    toast.querySelector(".buy-toast-close").addEventListener("click", function () {
+      toast.classList.remove("buy-toast-visible");
+      setTimeout(function () { toast.remove(); }, 300);
+    });
+
+    // Auto-dismiss after 8s
+    setTimeout(function () {
+      if (toast.parentNode) {
+        toast.classList.remove("buy-toast-visible");
+        setTimeout(function () { toast.remove(); }, 300);
+      }
+    }, 8000);
   }
 
   function renderRAGTrace(toolCalls) {

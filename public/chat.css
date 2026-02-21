@@ -1,19 +1,4 @@
-/* Diagnostic Partner — Chat styles */
-
-/* Header nav link */
-.header-nav {
-  margin-top: 0.5rem;
-}
-
-.header-nav a {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.85rem;
-  text-decoration: underline;
-}
-
-.header-nav a:hover {
-  color: #fff;
-}
+/* Repair Assistant — Chat styles */
 
 /* Chat layout */
 .chat-main {
@@ -314,6 +299,138 @@
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
+}
+
+/* Greeting bubble */
+.greeting-bubble .bubble-text {
+  white-space: pre-line;
+}
+
+/* Buy button */
+.buy-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.6rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  background: #059669;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.buy-btn:hover {
+  background: #047857;
+}
+
+.buy-btn-small {
+  width: auto;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+/* Alternative parts */
+.alternatives-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.bubble-alt-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.4rem;
+  background: #f8f9fa;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.alt-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.alt-card-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.alt-card-pn {
+  font-size: 0.78rem;
+  color: #666;
+}
+
+.alt-card-reason {
+  font-size: 0.78rem;
+  color: #888;
+  margin-top: 0.15rem;
+}
+
+/* Buy toast overlay */
+.buy-toast {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.buy-toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.buy-toast-inner {
+  background: #1a1a1a;
+  color: #fff;
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  max-width: 420px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  text-align: center;
+}
+
+.buy-toast-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.buy-toast-body {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #ccc;
+  margin-bottom: 0.75rem;
+}
+
+.buy-toast-body strong {
+  color: #fff;
+}
+
+.buy-toast-close {
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: #fff;
+  padding: 0.4rem 1.25rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.buy-toast-close:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* RAG trace inside chat bubbles */
