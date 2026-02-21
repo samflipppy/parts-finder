@@ -316,6 +316,32 @@
   align-items: center;
 }
 
+/* RAG trace inside chat bubbles */
+.chat-trace {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.chat-trace summary {
+  font-size: 0.78rem;
+  color: #6b7280;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chat-trace .trace-tool-block {
+  background: #f8f9fa;
+  font-size: 0.78rem;
+}
+
+.chat-trace .rag-score-line {
+  padding-left: 1.5rem;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
   .chat-main {
