@@ -266,9 +266,9 @@
       bubble.appendChild(conf);
     }
 
-    // RAG trace (collapsible, inside bubble)
-    if (data._metrics && data._metrics.toolCalls && data._metrics.toolCalls.length > 0) {
-      var traceEl = renderRAGTrace(data._metrics.toolCalls);
+    // Agent reasoning trace (collapsible, inside bubble)
+    if (data._metrics || data.reasoning) {
+      var traceEl = renderAgentTrace(data);
       if (traceEl) {
         bubble.appendChild(traceEl);
       }
@@ -364,105 +364,186 @@
     }, 8000);
   }
 
-  function renderRAGTrace(toolCalls) {
+  function renderAgentTrace(data) {
+    var metrics = data._metrics || {};
+    var toolCalls = metrics.toolCalls || [];
     var html = '';
 
-    toolCalls.forEach(function (tc) {
-      html += '<div class="trace-tool-block">';
-      html += '<div class="trace-tool-header">' + escapeHtml(tc.toolName) + '</div>';
+    // ---- Agent reasoning ----
+    if (data.reasoning) {
+      html += '<div class="trace-reasoning-block">';
+      html += '<div class="trace-tool-header">Agent Reasoning</div>';
+      html += '<div class="trace-reasoning-text">' + escapeHtml(data.reasoning) + '</div>';
+      html += '</div>';
+    }
 
-      // Query params
+    // ---- Tool call sequence overview ----
+    if (toolCalls.length > 0) {
+      var sequence = toolCalls.map(function (tc) { return tc.toolName; });
+      html += '<div class="trace-sequence-bar">';
+      html += '<span class="trace-seq-label">Tool chain:</span> ';
+      html += sequence.map(function (name, i) {
+        return '<span class="trace-seq-step">' + escapeHtml(name) + '</span>' +
+          (i < sequence.length - 1 ? ' <span class="trace-seq-arrow">&rarr;</span> ' : '');
+      }).join('');
+      html += ' <span class="trace-latency">(' + (metrics.totalLatencyMs || 0) + 'ms total)</span>';
+      html += '</div>';
+    }
+
+    // ---- Individual tool calls ----
+    toolCalls.forEach(function (tc, idx) {
+      html += '<div class="trace-tool-block">';
+      html += '<div class="trace-tool-header">' +
+        '<span class="trace-tool-num">' + (idx + 1) + '</span> ' +
+        escapeHtml(tc.toolName) +
+        '<span class="trace-latency trace-header-latency">' + tc.latencyMs + 'ms</span>' +
+        '</div>';
+
+      // Input params
       if (tc.input && Object.keys(tc.input).length > 0) {
-        var params = Object.keys(tc.input).map(function (key) {
-          return escapeHtml(key) + '=' + escapeHtml(JSON.stringify(tc.input[key]));
-        }).join(', ');
-        html += '<div class="trace-log-line">' +
-          '<span class="trace-prefix">[' + escapeHtml(tc.toolName) + ']</span> ' +
-          'Query: {' + params + '}' +
-          '</div>';
+        html += '<div class="trace-log-line trace-input-line">';
+        html += '<span class="trace-label">Input:</span> ';
+        Object.keys(tc.input).forEach(function (key, ki) {
+          if (ki > 0) html += ', ';
+          html += '<span class="trace-filter-name">' + escapeHtml(key) + '</span>=';
+          html += '<span class="trace-filter-val">' + escapeHtml(JSON.stringify(tc.input[key])) + '</span>';
+        });
+        html += '</div>';
       }
 
-      // RAG-specific trace
-      if (tc.ragTrace) {
-        var rag = tc.ragTrace;
+      // ---- Tool-specific details ----
 
-        // Search mode
-        html += '<div class="trace-log-line">' +
-          '<span class="trace-prefix">[searchManual]</span> ' +
-          'Mode: <strong>' + escapeHtml(rag.searchMode) + '</strong>' +
-          (rag.searchMode === 'vector' ? ' (semantic RAG)' : ' (keyword fallback)') +
-          '</div>';
-
-        if (rag.searchMode === 'vector') {
-          // Embeddings loaded
-          html += '<div class="trace-log-line">' +
-            '<span class="trace-prefix">[searchManual]</span> ' +
-            'Loaded <strong>' + rag.embeddingsLoaded + '</strong> section embeddings' +
+      // listManualSections — show the TOC that was loaded
+      if (tc.toolName === 'listManualSections') {
+        if (tc.resultCount > 0) {
+          html += '<div class="trace-log-line trace-success">' +
+            'Loaded manual table of contents: <strong>' + tc.resultCount + ' sections</strong> available' +
             '</div>';
-
-          // Filter narrowing
-          if (rag.candidatesAfterFilter < rag.embeddingsLoaded) {
-            html += '<div class="trace-log-line trace-filter-line">' +
-              '<span class="trace-prefix">[searchManual]</span> ' +
-              'After metadata filter: ' +
-              '<span class="trace-narrowing">' + rag.embeddingsLoaded + ' &rarr; ' + rag.candidatesAfterFilter + ' candidates</span>' +
-              '</div>';
-          }
-
-          // Query text
-          html += '<div class="trace-log-line">' +
-            '<span class="trace-prefix">[searchManual]</span> ' +
-            'Embedded query: <span class="trace-filter-val">&quot;' + escapeHtml(rag.queryText) + '&quot;</span>' +
-            '</div>';
-
-          // Cosine similarity scores
-          if (rag.topScores && rag.topScores.length > 0) {
-            html += '<div class="trace-log-line">' +
-              '<span class="trace-prefix">[searchManual]</span> ' +
-              'Cosine similarity scores:' +
-              '</div>';
-
-            rag.topScores.forEach(function (s, idx) {
-              var passed = s.score >= rag.similarityThreshold;
-              var icon = passed ? '\u2713' : '\u2717';
-              var color = passed ? '#059669' : '#9ca3af';
-              html += '<div class="trace-log-line rag-score-line">' +
-                '<span style="color:' + color + '">' + icon + '</span> ' +
-                '#' + (idx + 1) + ' ' +
-                '<span class="' + (passed ? 'trace-narrowing' : 'trace-latency') + '">' +
-                s.score.toFixed(4) + '</span> &rarr; ' +
-                escapeHtml(s.sectionTitle) +
-                '</div>';
-            });
-
-            // Threshold summary
-            html += '<div class="trace-log-line trace-filter-line">' +
-              '<span class="trace-prefix">[searchManual]</span> ' +
-              'Threshold: <span class="trace-filter-val">' + rag.similarityThreshold + '</span> &rarr; ' +
-              '<strong>' + rag.resultsAboveThreshold + '</strong> of ' + rag.topScores.length + ' passed' +
-              '</div>';
-          }
         } else {
-          // Keyword fallback reason
-          var reason = rag.embeddingsLoaded === 0
-            ? 'No embeddings in Firestore'
-            : 'No keyword provided for semantic search';
-          html += '<div class="trace-log-line">' +
-            '<span class="trace-prefix">[searchManual]</span> ' +
-            'Reason: ' + reason +
+          html += '<div class="trace-log-line trace-warn">' +
+            'No manual found for this equipment' +
             '</div>';
         }
       }
 
-      // Result + latency
+      // searchManual — RAG trace
+      if (tc.toolName === 'searchManual' && tc.ragTrace) {
+        var rag = tc.ragTrace;
+
+        html += '<div class="trace-log-line">' +
+          '<span class="trace-label">Mode:</span> ' +
+          '<strong>' + escapeHtml(rag.searchMode) + '</strong>' +
+          (rag.searchMode === 'vector' ? ' (semantic RAG)' : ' (keyword fallback)') +
+          '</div>';
+
+        if (rag.searchMode === 'vector') {
+          html += '<div class="trace-log-line">' +
+            '<span class="trace-label">Embeddings:</span> ' +
+            rag.embeddingsLoaded + ' loaded';
+          if (rag.candidatesAfterFilter < rag.embeddingsLoaded) {
+            html += ' &rarr; <span class="trace-narrowing">' + rag.candidatesAfterFilter + ' after filter</span>';
+          }
+          html += '</div>';
+
+          html += '<div class="trace-log-line">' +
+            '<span class="trace-label">Query:</span> ' +
+            '<span class="trace-filter-val">&quot;' + escapeHtml(rag.queryText) + '&quot;</span>' +
+            '</div>';
+
+          if (rag.topScores && rag.topScores.length > 0) {
+            html += '<div class="trace-log-line"><span class="trace-label">Similarity scores:</span></div>';
+            rag.topScores.forEach(function (s, si) {
+              var passed = s.score >= rag.similarityThreshold;
+              var icon = passed ? '\u2713' : '\u2717';
+              var cls = passed ? 'trace-score-pass' : 'trace-score-fail';
+              html += '<div class="trace-log-line rag-score-line">' +
+                '<span class="' + cls + '">' + icon + ' ' + s.score.toFixed(4) + '</span> ' +
+                escapeHtml(s.sectionTitle) +
+                '</div>';
+            });
+
+            html += '<div class="trace-log-line">' +
+              '<span class="trace-label">Threshold:</span> ' + rag.similarityThreshold +
+              ' &rarr; <strong>' + rag.resultsAboveThreshold + '</strong>/' + rag.topScores.length + ' passed' +
+              '</div>';
+          }
+        } else {
+          var reason = rag.embeddingsLoaded === 0
+            ? 'No embeddings in Firestore — run embed-sections.ts'
+            : 'No keyword provided, using keyword match';
+          html += '<div class="trace-log-line trace-warn">' + reason + '</div>';
+        }
+      }
+
+      // searchParts — filter steps
+      if (tc.toolName === 'searchParts' && tc.filterSteps && tc.filterSteps.length > 0) {
+        html += '<div class="trace-log-line"><span class="trace-label">Filter narrowing:</span></div>';
+        tc.filterSteps.forEach(function (step) {
+          html += '<div class="trace-log-line rag-score-line">' +
+            '<span class="trace-filter-name">' + escapeHtml(step.filter) + '</span>=' +
+            '<span class="trace-filter-val">' + escapeHtml(step.value) + '</span>' +
+            ' &rarr; <span class="trace-narrowing">' + step.remaining + ' remaining</span>' +
+            '</div>';
+        });
+      }
+
+      // getRepairGuide
+      if (tc.toolName === 'getRepairGuide') {
+        if (tc.resultCount > 0) {
+          html += '<div class="trace-log-line trace-success">' +
+            'Repair guide found with step-by-step instructions' +
+            '</div>';
+        } else {
+          html += '<div class="trace-log-line trace-warn">' +
+            'No repair guide available for this part' +
+            '</div>';
+        }
+      }
+
+      // getSuppliers
+      if (tc.toolName === 'getSuppliers') {
+        html += '<div class="trace-log-line">' +
+          'Retrieved <strong>' + tc.resultCount + '</strong> supplier' + (tc.resultCount !== 1 ? 's' : '') +
+          ' with quality/delivery data' +
+          '</div>';
+      }
+
+      // getManualSection
+      if (tc.toolName === 'getManualSection') {
+        if (tc.resultCount > 0) {
+          html += '<div class="trace-log-line trace-success">' +
+            'Section content loaded' +
+            '</div>';
+        } else {
+          html += '<div class="trace-log-line trace-warn">' +
+            'Section not found' +
+            '</div>';
+        }
+      }
+
+      // Result summary
       html += '<div class="trace-log-line trace-result-line">' +
-        '<span class="trace-prefix">[' + escapeHtml(tc.toolName) + ']</span> ' +
-        'Returned <strong>' + tc.resultCount + '</strong> results ' +
-        '<span class="trace-latency">(' + tc.latencyMs + 'ms)</span>' +
+        '&rarr; <strong>' + tc.resultCount + '</strong> result' + (tc.resultCount !== 1 ? 's' : '') +
         '</div>';
 
       html += '</div>'; // .trace-tool-block
     });
+
+    // ---- Summary stats ----
+    if (metrics.totalToolCalls > 0) {
+      html += '<div class="trace-summary">';
+      html += '<span>' + metrics.totalToolCalls + ' tool call' + (metrics.totalToolCalls !== 1 ? 's' : '') + '</span>';
+      if (metrics.totalLatencyMs) {
+        html += ' &middot; <span>' + metrics.totalLatencyMs + 'ms total</span>';
+      }
+      if (metrics.avgToolLatencyMs) {
+        html += ' &middot; <span>' + metrics.avgToolLatencyMs + 'ms avg/tool</span>';
+      }
+      if (data.confidence) {
+        html += ' &middot; <span>Confidence: ' + escapeHtml(data.confidence) + '</span>';
+      }
+      html += '</div>';
+    }
 
     if (!html) return null;
 
@@ -470,7 +551,8 @@
     section.className = 'trace-section chat-trace';
 
     var summary = document.createElement('summary');
-    summary.textContent = 'Agent Reasoning Trace';
+    var toolCount = toolCalls.length;
+    summary.innerHTML = 'Agent Trace <span class="trace-badge">' + toolCount + ' tool' + (toolCount !== 1 ? 's' : '') + '</span>';
     section.appendChild(summary);
 
     var content = document.createElement('div');
