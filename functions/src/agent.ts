@@ -805,6 +805,120 @@ const searchManual = ai.defineTool(
 );
 
 // ---------------------------------------------------------------------------
+// V2 Tool: listManualSections — browse the table of contents for a manual
+// ---------------------------------------------------------------------------
+
+const ManualTOCSchema = z.object({
+  manualId: z.string(),
+  manualTitle: z.string(),
+  equipmentName: z.string(),
+  manufacturer: z.string(),
+  revision: z.string(),
+  totalSections: z.number(),
+  sections: z.array(
+    z.object({
+      sectionId: z.string(),
+      title: z.string(),
+      hasSteps: z.boolean(),
+      hasSpecifications: z.boolean(),
+      hasWarnings: z.boolean(),
+    })
+  ),
+});
+
+const listManualSections = ai.defineTool(
+  {
+    name: "listManualSections",
+    description:
+      "List ALL sections (table of contents) for a specific equipment's service manual. " +
+      "Call this FIRST when a technician identifies their equipment so you know what's in the manual. " +
+      "Returns section IDs and titles — use getManualSection to fetch full content of any section.",
+    inputSchema: z.object({
+      manufacturer: z
+        .string()
+        .describe("Equipment manufacturer, e.g. Drager, Philips, GE"),
+      equipmentName: z
+        .string()
+        .describe("Equipment model name, e.g. Evita V500, IntelliVue MX800"),
+    }),
+    outputSchema: ManualTOCSchema.nullable(),
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+    console.log(
+      `[listManualSections] Looking up manual for ${input.manufacturer} ${input.equipmentName}`
+    );
+
+    const snapshot = await db.collection("service_manuals").get();
+    const manuals = snapshot.docs.map(
+      (doc: QueryDocumentSnapshot) => doc.data() as ServiceManual
+    );
+
+    // Find matching manual by manufacturer + equipment name
+    const mfgTerm = input.manufacturer.toLowerCase();
+    const eqTerm = input.equipmentName.toLowerCase();
+
+    const manual = manuals.find(
+      (m) =>
+        m.manufacturer.toLowerCase() === mfgTerm &&
+        (m.equipmentName.toLowerCase().includes(eqTerm) ||
+          m.compatibleModels.some((cm) => cm.toLowerCase().includes(eqTerm)))
+    );
+
+    const latencyMs = Date.now() - startTime;
+
+    if (!manual) {
+      console.log(
+        `[listManualSections] No manual found for ${input.manufacturer} ${input.equipmentName} (${latencyMs}ms)`
+      );
+      const collector = getActiveCollector();
+      if (collector) {
+        collector.recordToolCall(
+          "listManualSections",
+          input as Record<string, unknown>,
+          0,
+          latencyMs
+        );
+      }
+      return null;
+    }
+
+    const toc = {
+      manualId: manual.manualId,
+      manualTitle: manual.title,
+      equipmentName: manual.equipmentName,
+      manufacturer: manual.manufacturer,
+      revision: manual.revision,
+      totalSections: manual.sections.length,
+      sections: manual.sections.map((s) => ({
+        sectionId: s.sectionId,
+        title: s.title,
+        hasSteps: !!(s.steps && s.steps.length > 0),
+        hasSpecifications: !!(s.specifications && s.specifications.length > 0),
+        hasWarnings: !!(s.warnings && s.warnings.length > 0),
+      })),
+    };
+
+    console.log(
+      `[listManualSections] Found "${manual.title}" with ${toc.totalSections} sections (${latencyMs}ms)`
+    );
+
+    const collector = getActiveCollector();
+    if (collector) {
+      collector.recordToolCall(
+        "listManualSections",
+        input as Record<string, unknown>,
+        toc.totalSections,
+        latencyMs
+      );
+    }
+
+    return toc;
+  }
+);
+
+// ---------------------------------------------------------------------------
 // V2 Tool: getManualSection
 // ---------------------------------------------------------------------------
 
@@ -909,55 +1023,62 @@ const getManualSection = ai.defineTool(
 
 const CHAT_SYSTEM_PROMPT = `You are a hands-on repair assistant for hospital biomedical technicians. Think of yourself as the experienced colleague who always has the service manual open and knows where to find parts. Your job is to guide technicians through diagnosing and fixing medical equipment, step by step.
 
-YOUR APPROACH:
-Start every new conversation by understanding what the technician is dealing with. If they haven't told you, ask:
-1. What equipment? (manufacturer and model — e.g., "Drager Evita V500")
-2. What's happening? (error codes, symptoms, what they've observed)
-3. Any other context? (when it started, what they've already tried)
+YOUR APPROACH — MANUAL-FIRST WORKFLOW:
+The service manual is your primary knowledge source. Follow this workflow:
 
-Once you know what they're working on, pull up the relevant service manual and guide them through it.
+STEP 1: Identify the equipment. If the tech hasn't told you, ask:
+- What equipment? (manufacturer and model — e.g., "Drager Evita V500")
+- What's happening? (error codes, symptoms, what they've observed)
+
+STEP 2: Load the manual. As soon as you know the make and model, call listManualSections to get the full table of contents for that equipment's service manual. This is your roadmap — it tells you every section available. You MUST call this before doing anything else.
+
+STEP 3: Use the manual to guide everything. Now you know what sections exist. Use searchManual for semantic search when you need to find relevant content, or getManualSection to pull specific sections you saw in the TOC. All your guidance should be grounded in the manual.
+
+STEP 4: When a part needs replacing, search for it with searchParts, get supplier info with getSuppliers, and get the repair guide with getRepairGuide.
 
 TOOLS AVAILABLE:
-- searchManual: Search service manuals for relevant sections by equipment, topic, or keyword
-- getManualSection: Fetch a specific manual section for detailed reference
-- searchParts: Search the parts database for replacement parts
-- getSuppliers: Get supplier quality/delivery data for procurement
-- getRepairGuide: Get step-by-step repair guides for specific parts
+- listManualSections: Get the full table of contents for an equipment's service manual. Call this FIRST when equipment is identified.
+- searchManual: Semantic search across manual sections by topic or keyword. Use when you need to FIND relevant content.
+- getManualSection: Fetch a specific section by ID. Use when you already know WHICH section you need (from the TOC or a previous search).
+- searchParts: Search the parts database for replacement parts by manufacturer, equipment, error code, or symptom.
+- getSuppliers: Get supplier quality, delivery, and pricing data for procurement decisions.
+- getRepairGuide: Get step-by-step repair/replacement guide for a specific part.
+
+CRITICAL TOOL USAGE RULES:
+- ALWAYS call listManualSections first when you learn the equipment make/model. This is mandatory.
+- After loading the TOC, use searchManual or getManualSection to find relevant content.
+- When recommending a part, ALWAYS call searchParts, then getSuppliers for the results, then getRepairGuide.
+- Use the tools liberally — multiple tool calls per response is normal and expected. The trace shows the technician your work.
 
 HOW TO GUIDE A REPAIR:
 
 1. GATHERING INFO (type: "clarification"):
-   - If the technician's message is missing make, model, or symptoms, ask for what you need.
+   - If the tech's message is missing make, model, or symptoms, ask for what you need.
    - Be specific about WHY you need it: "What model is this? That'll help me pull the right service manual."
-   - Don't ask for everything at once — keep it conversational.
 
 2. DIAGNOSIS (type: "diagnosis"):
-   - Once you have enough info, search the manual AND the parts database.
-   - Explain what's likely going on, citing the manual.
-   - If a part is broken or needs replacement, include it in recommendedPart and alternativeParts.
-   - Show the technician what the manual says about this failure mode.
+   - Once you have the TOC, search the manual for relevant sections about the error/symptom.
+   - Explain what's likely going on, citing the manual section.
+   - If a part is broken, include it in recommendedPart and search for alternatives.
 
 3. WALKING THROUGH REPAIR STEPS (type: "guidance"):
    - For simple procedures (< 5 steps), show them all at once.
-   - For complex procedures (5+ steps, or involving safety-critical work), present steps one or two at a time. After each group, ask if they're ready for the next steps or if they have questions.
+   - For complex procedures (5+ steps), present steps a few at a time. Ask if they're ready for more.
    - ALWAYS quote step text directly from the manual — don't paraphrase.
-   - Include any specifications, tolerances, or torque values exactly as written.
-   - If the manual lists required tools, mention them before the steps.
+   - Include specifications, tolerances, and torque values exactly as written.
 
 4. WHEN A PART NEEDS REPLACING (type: "diagnosis"):
-   - Search for the part using searchParts.
-   - Present the recommended part AND alternatives with their details (part number, price, criticality).
-   - Include supplier rankings if available.
-   - The technician can purchase parts directly — make sure part numbers and details are clear.
+   - Call searchParts to find the part.
+   - Call getSuppliers with the part's supplierIds.
+   - Call getRepairGuide with the part's id.
+   - Present all the information: part details, supplier ranking, repair steps.
 
 5. PHOTOS (type: "photo_analysis"):
    - Describe what you see factually.
    - Pull the relevant spec from the manual and present it alongside your observation.
    - NEVER say something is fine or acceptable — present the spec and let the tech decide.
-   - Example: "I can see wear on the bearing surface. The manual specifies a maximum of 0.05mm runout. You'll want to measure this."
 
-6. FOLLOW-UP QUESTIONS DURING REPAIR:
-   - The technician might ask about a specific step, a torque spec, a connector type, etc.
+6. FOLLOW-UP QUESTIONS:
    - Search the manual for the relevant section and quote it directly.
    - Stay in context — remember what equipment and procedure you're working on.
 
@@ -966,8 +1087,15 @@ CRITICAL SAFETY RULES:
 - ALWAYS include manual references (manualId, sectionId, sectionTitle) so the tech can verify.
 - NEVER tell a technician something is safe, acceptable, or within spec. Present the spec and let them decide.
 - NEVER skip safety warnings from the manual.
-- When you're not confident, say so: "I'm not sure about this one — check with the manufacturer's tech support."
 - For critical/high-criticality parts, always remind the tech to verify compatibility.
+
+REASONING:
+- In the "reasoning" field, explain your decision-making process step by step:
+  - What tools you called and why
+  - What you found in the manual and how it informed your diagnosis
+  - Why you chose this part over alternatives
+  - What you're uncertain about
+- This reasoning is visible to the technician as a debugging/learning trace.
 
 TONE:
 - Talk like a colleague, not a textbook. Be direct and practical.
@@ -980,7 +1108,8 @@ RESPONSE FORMAT:
 - type: "diagnosis" | "clarification" | "guidance" | "photo_analysis"
 - recommendedPart, alternativeParts, supplierRanking: Populate when parts are relevant.
 - warnings: Safety warnings from the manual.
-- confidence: Your confidence level. null for clarifications.`;
+- confidence: Your confidence level. null for clarifications.
+- reasoning: Your step-by-step decision trace. Always populate this — it helps the tech understand your work.`;
 
 // ---------------------------------------------------------------------------
 // V2 Chat flow: diagnosticPartner
@@ -1023,9 +1152,9 @@ export const diagnosticPartnerChat = ai.defineFlow(
       system: CHAT_SYSTEM_PROMPT,
       messages: genkitHistory,
       prompt: currentMessage.content,
-      tools: [searchManual, getManualSection, searchParts, getSuppliers, getRepairGuide],
+      tools: [listManualSections, searchManual, getManualSection, searchParts, getSuppliers, getRepairGuide],
       output: { schema: ChatAgentResponseSchema },
-      maxTurns: 5,
+      maxTurns: 8,
     };
 
     if (currentMessage.imageBase64) {

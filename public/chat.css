@@ -433,7 +433,7 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* RAG trace inside chat bubbles */
+/* Agent trace inside chat bubbles */
 .chat-trace {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
@@ -448,15 +448,160 @@
   color: #6b7280;
   cursor: pointer;
   user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trace-badge {
+  display: inline-block;
+  background: #e5e7eb;
+  color: #4b5563;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.chat-trace .trace-tool-logs {
+  padding: 0.5rem 0;
 }
 
 .chat-trace .trace-tool-block {
   background: #f8f9fa;
   font-size: 0.78rem;
+  margin-bottom: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.chat-trace .trace-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: #1a1a1a;
+  margin-bottom: 0.3rem;
+}
+
+.trace-tool-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: #0066cc;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.trace-header-latency {
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.chat-trace .trace-log-line {
+  padding: 0.1rem 0;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.trace-label {
+  font-weight: 600;
+  color: #374151;
+}
+
+.trace-input-line {
+  word-break: break-all;
 }
 
 .chat-trace .rag-score-line {
-  padding-left: 1.5rem;
+  padding-left: 1.25rem;
+}
+
+.trace-score-pass {
+  color: #059669;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.trace-score-fail {
+  color: #9ca3af;
+  font-family: monospace;
+}
+
+.trace-success {
+  color: #059669;
+}
+
+.trace-warn {
+  color: #d97706;
+}
+
+/* Reasoning block */
+.chat-trace .trace-reasoning-block {
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  background: #f0f4ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+}
+
+.chat-trace .trace-reasoning-block .trace-tool-header {
+  color: #4338ca;
+}
+
+.chat-trace .trace-reasoning-text {
+  font-size: 0.78rem;
+  color: #4b5563;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+/* Tool chain sequence bar */
+.trace-sequence-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.trace-seq-label {
+  font-weight: 600;
+  color: #374151;
+}
+
+.trace-seq-step {
+  background: #e0e7ff;
+  color: #3730a3;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.72rem;
+}
+
+.trace-seq-arrow {
+  color: #9ca3af;
+}
+
+/* Summary stats */
+.trace-summary {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.72rem;
+  color: #9ca3af;
 }
 
 /* Responsive */
