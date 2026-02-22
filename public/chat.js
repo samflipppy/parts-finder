@@ -18,6 +18,9 @@
   var imagePreview = document.getElementById("image-preview");
   var imagePreviewImg = document.getElementById("image-preview-img");
   var imageRemoveBtn = document.getElementById("image-remove-btn");
+  var debugPanel = document.getElementById("debug-panel");
+  var debugLog = document.getElementById("debug-log");
+  var debugCopyBtn = document.getElementById("debug-copy-btn");
 
   // Pending image attachment (base64 string or null)
   var pendingImage = null;
@@ -79,6 +82,19 @@
     imagePreview.classList.add("hidden");
   });
 
+  if (debugCopyBtn && debugLog) {
+    debugCopyBtn.addEventListener("click", function () {
+      if (!debugLog.textContent) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard
+          .writeText(debugLog.textContent)
+          .catch(function () {
+            console.warn("Failed to copy debug log to clipboard.");
+          });
+      }
+    });
+  }
+
   // Example chips
   document.querySelectorAll(".chat-examples .chip").forEach(function (chip) {
     chip.addEventListener("click", function () {
@@ -120,16 +136,27 @@
     // Disable input while waiting
     setLoading(true);
 
+    var payload = { messages: messages };
+
     fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: messages }),
+      body: JSON.stringify(payload),
     })
       .then(function (res) {
         if (!res.ok) {
           return res.json().then(function (body) {
             var msg = body.error || "Request failed with status " + res.status;
             if (body.detail) msg += "\n\nDetail: " + body.detail;
+            logClientError({
+              source: "chat_fetch",
+              phase: "response_not_ok",
+              status: res.status,
+              statusText: res.statusText,
+              body: body,
+              lastUserMessage: text,
+              timestamp: new Date().toISOString(),
+            });
             throw new Error(msg);
           });
         }
@@ -140,8 +167,19 @@
         renderAssistantResponse(data);
       })
       .catch(function (err) {
+        logClientError({
+          source: "chat_fetch",
+          phase: "network_or_parse_error",
+          errorMessage: err && err.message ? err.message : String(err),
+          stack: err && err.stack ? err.stack : undefined,
+          lastUserMessage: text,
+          timestamp: new Date().toISOString(),
+        });
         typingEl.remove();
-        appendBubble("error", err.message || "Something went wrong. Please try again.");
+        appendBubble(
+          "error",
+          err.message || "Something went wrong. Please try again."
+        );
       })
       .finally(function () {
         setLoading(false);
@@ -272,6 +310,9 @@
     if (data._metrics || data.reasoning) {
       var traceEl = renderAgentTrace(data);
       if (traceEl) {
+        // Show trace open by default so the technician can see
+        // the agent's thought process without extra clicks.
+        traceEl.open = true;
         bubble.appendChild(traceEl);
       }
     }
@@ -549,16 +590,21 @@
 
     if (!html) return null;
 
-    var section = document.createElement('details');
-    section.className = 'trace-section chat-trace';
+    var section = document.createElement("details");
+    section.className = "trace-section chat-trace";
 
-    var summary = document.createElement('summary');
+    var summary = document.createElement("summary");
     var toolCount = toolCalls.length;
-    summary.innerHTML = 'Agent Trace <span class="trace-badge">' + toolCount + ' tool' + (toolCount !== 1 ? 's' : '') + '</span>';
+    summary.innerHTML =
+      'Agent Trace <span class="trace-badge">' +
+      toolCount +
+      " tool" +
+      (toolCount !== 1 ? "s" : "") +
+      "</span>";
     section.appendChild(summary);
 
-    var content = document.createElement('div');
-    content.className = 'trace-tool-logs';
+    var content = document.createElement("div");
+    content.className = "trace-tool-logs";
     content.innerHTML = html;
     section.appendChild(content);
 
@@ -566,6 +612,27 @@
   }
 
   // ---- Helpers ----
+
+  function logClientError(info) {
+    try {
+      // Always mirror to console for dev tools
+      console.error("[chat-ui] Client error", info);
+    } catch (_) {
+      // ignore console errors
+    }
+
+    if (!debugPanel || !debugLog) return;
+
+    var text;
+    try {
+      text = JSON.stringify(info, null, 2);
+    } catch (_) {
+      text = String(info);
+    }
+
+    debugLog.textContent = text;
+    debugPanel.classList.remove("hidden");
+  }
 
   function setLoading(loading) {
     sendBtn.disabled = loading;

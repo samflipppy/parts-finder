@@ -17,6 +17,15 @@
     <!-- Message history -->
     <div id="chat-messages" class="chat-messages"></div>
 
+    <!-- Client-side debug/error log (for copying errors) -->
+    <section id="debug-panel" class="debug-panel hidden" aria-label="Client debug log">
+      <div class="debug-header">
+        <span class="debug-title">Client error log</span>
+        <button id="debug-copy-btn" type="button" class="debug-copy-btn">Copy latest</button>
+      </div>
+      <pre id="debug-log" class="debug-log" tabindex="0"></pre>
+    </section>
+
     <!-- Input area -->
     <div class="chat-input-area">
       <div id="image-preview" class="image-preview hidden">

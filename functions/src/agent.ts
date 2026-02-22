@@ -476,7 +476,7 @@ const ChatAgentResponseSchema = z.object({
     })
   ),
   confidence: z.enum(["high", "medium", "low"]).nullable(),
-  reasoning: z.string(),
+  reasoning: z.string().nullable(),  // null allowed for clarification responses
   warnings: z.array(z.string()),
 });
 
@@ -1221,7 +1221,7 @@ export async function chatWithMetrics(
       supplierRanking: response.supplierRanking,
       alternativeParts: response.alternativeParts,
       confidence: response.confidence ?? "medium",
-      reasoning: response.reasoning,
+      reasoning: response.reasoning ?? "",
       warnings: response.warnings,
     };
     const metrics = collector.finalize(lastUserMsg, pseudoResponse);

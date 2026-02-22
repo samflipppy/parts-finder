@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run seed:*)",
+      "Bash(npm run:*)",
+      "Bash(gcloud auth list:*)"
+    ]
+  }
+}

@@ -190,7 +190,7 @@ export interface ChatAgentResponse {
     reason: string;
   }>;
   confidence: "high" | "medium" | "low" | null;
-  reasoning: string;
+  reasoning: string | null;  // null for clarification when no tools were used
   warnings: string[];
 }
 
