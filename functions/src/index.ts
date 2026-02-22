@@ -112,7 +112,7 @@ export const metrics = onRequest(
  * a ChatAgentResponse with manual references, diagnosis, and guidance.
  */
 export const chat = onRequest(
-  { cors: true, timeoutSeconds: 120 },
+  { cors: true, timeoutSeconds: 300 },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).json({ error: "Method not allowed. Use POST." });

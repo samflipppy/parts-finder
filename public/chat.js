@@ -128,7 +128,9 @@
       .then(function (res) {
         if (!res.ok) {
           return res.json().then(function (body) {
-            throw new Error(body.error || "Request failed with status " + res.status);
+            var msg = body.error || "Request failed with status " + res.status;
+            if (body.detail) msg += "\n\nDetail: " + body.detail;
+            throw new Error(msg);
           });
         }
         return res.json();
