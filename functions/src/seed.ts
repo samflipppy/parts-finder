@@ -12,6 +12,7 @@ dotenv.config();
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { Part, Supplier, RepairGuide, ServiceManual } from "./types";
+import { extraRepairGuides } from "./__generated__/repair-guides-extra";
 
 // Initialize Firebase Admin — uses GOOGLE_APPLICATION_CREDENTIALS or
 // falls back to the default emulator connection when running locally.
@@ -739,14 +740,177 @@ const serviceManuals: ServiceManual[] = [
         ],
       },
       {
+        sectionId: "ev500_2_1",
+        title: "2.1 System Architecture Overview",
+        content: "The Evita V500 is a microprocessor-controlled, pneumatically driven ICU ventilator. The system consists of five major subsystems: (1) the pneumatic system, which receives compressed medical air and oxygen from pipeline or cylinder sources, regulates supply pressure through dual-stage regulators, and delivers gas via proportional solenoid valves controlled by the main processor; (2) the electronic control system, built around a dual-processor architecture (main CPU for ventilation control, secondary CPU for alarm monitoring) on the main PCB, which reads flow sensors, pressure transducers, and O2 cell data at 200 Hz to control breath delivery; (3) the patient breathing circuit interface, consisting of the inspiratory outlet, expiratory inlet with proximal flow sensor, and electronically controlled exhalation valve; (4) the user interface with a 12-inch color TFT touchscreen, rotary encoder, and hardkey panel; (5) the cooling and power subsystem. The ventilator supports all standard ventilation modes: VC-CMV, VC-SIMV, PC-CMV, PC-SIMV, PC-BIPAP, CPAP/ASB, and optional modes APRV and SmartCare. Power is supplied by an internal AC/DC converter (100-240 VAC input) with an internal lithium-ion backup battery providing approximately 30 minutes of operation during power failure.",
+        specifications: [
+          { parameter: "Supply gas pressure (pipeline)", value: "43-87", unit: "PSI (3-6 bar)" },
+          { parameter: "Supply gas pressure (cylinder)", value: "up to 2200", unit: "PSI (150 bar)" },
+          { parameter: "Tidal volume range", value: "20-2000", unit: "mL" },
+          { parameter: "Respiratory rate range", value: "2-100", unit: "breaths/min" },
+          { parameter: "PEEP range", value: "0-50", unit: "cmH2O" },
+          { parameter: "FiO2 range", value: "21-100", unit: "%" },
+          { parameter: "Maximum inspiratory pressure", value: "80", unit: "cmH2O" },
+          { parameter: "Power consumption", value: "200", unit: "VA max" },
+          { parameter: "Battery backup duration", value: "~30", unit: "minutes" },
+          { parameter: "Weight", value: "28", unit: "kg (without accessories)" },
+          { parameter: "Main processor", value: "ARM Cortex-A9, 800 MHz", unit: "" },
+          { parameter: "Sensor sampling rate", value: "200", unit: "Hz" },
+        ],
+      },
+      {
+        sectionId: "ev500_3_2",
+        title: "3.2 Exhalation Valve Replacement",
+        content: "The exhalation valve assembly (P/N DRG-8412130) is an electronically controlled proportional valve that regulates PEEP and expiratory flow. The valve uses a silicone diaphragm actuated by a solenoid to modulate the expiratory orifice area. The diaphragm is the primary wear component — it softens and deforms over time, causing PEEP regulation errors (Error 22). The valve is a field-replaceable unit (FRU) mounted on the pneumatic block on the left side of the ventilator. After replacement, a PEEP calibration and system leak test are mandatory.",
+        tools: [
+          "T10 / T15 Torx screwdrivers",
+          "ESD wrist strap",
+          "Torque driver set to 1.0 Nm",
+          "Adult test lung (1L compliance)",
+          "Calibrated pressure manometer (0-100 cmH2O, +/- 0.5 cmH2O)",
+        ],
+        warnings: [
+          "WARNING: The exhalation valve regulates PEEP and expiratory flow. Incorrect installation can cause uncontrolled PEEP or inability to exhale — this is immediately life-threatening.",
+          "CAUTION: Do not force the valve assembly into the pneumatic block. The alignment pins must engage before pushing the assembly home. Cocking the assembly sideways will damage the O-ring seals.",
+          "CAUTION: The electrical connector (J22) is a 6-pin type. Note orientation before disconnecting.",
+        ],
+        steps: [
+          "Transfer patient to backup ventilator. Power down Evita V500, disconnect mains, wait 30 seconds.",
+          "Remove the expiratory port cover by pressing the two side release tabs and pulling forward.",
+          "Disconnect the expiratory limb from the exhalation valve housing.",
+          "Disconnect the 6-pin electrical connector from J22 on the exhalation valve solenoid. Squeeze the latch tab.",
+          "Remove 3x T15 Torx screws securing the valve to the pneumatic block (triangular pattern).",
+          "Pull the valve assembly straight out. Inspect pneumatic block seat faces for scoring or debris. Replace O-rings if they remained on the block.",
+          "Verify new O-rings seated in grooves on the replacement valve.",
+          "Align new valve with the pneumatic block. Push firmly until flush — do not cock sideways.",
+          "Install 3x T15 screws, torque to 1.0 Nm in star pattern.",
+          "Reconnect 6-pin connector to J22. Confirm latch clicks.",
+          "Reattach expiratory port cover.",
+          "Connect test lung, power on. Enter service menu (hold INFO + ALARM SILENCE during boot).",
+          "Navigate to Service > Calibration > Exhalation Valve. The system runs automated PEEP calibration at 5, 10, 15, and 20 cmH2O.",
+          "Monitor with external manometer — each PEEP level must be within +/- 1 cmH2O of set value.",
+          "Run system leak test from Service > Hardware Tests > Leak Test. Leak must be < 200 mL/min at 30 cmH2O.",
+          "Verify no Error 22 codes during 5-minute test ventilation at PEEP 10 cmH2O.",
+        ],
+        specifications: [
+          { parameter: "PEEP accuracy (post-calibration)", value: "+/- 1", unit: "cmH2O" },
+          { parameter: "Valve diaphragm material", value: "Medical-grade silicone", unit: "" },
+          { parameter: "Mounting torque", value: "1.0", unit: "Nm" },
+          { parameter: "Acceptable system leak rate", value: "< 200", unit: "mL/min at 30 cmH2O" },
+          { parameter: "Electrical connector", value: "J22, 6-pin", unit: "" },
+        ],
+      },
+      {
+        sectionId: "ev500_3_5",
+        title: "3.5 Power Supply and Battery Backup",
+        content: "The Evita V500 power subsystem consists of an AC/DC power supply module, a lithium-ion backup battery, and a battery management circuit. The power supply accepts 100-240 VAC at 50/60 Hz and produces four internal DC rails: +24V (pneumatic valve drivers and fan), +12V (sensors and analog circuits), +5V (logic), and +3.3V (processor core). The backup battery is a 14.4V 4.4Ah lithium-ion pack located behind the lower-left service panel. During mains power loss, the battery management circuit switches to battery power within 10 ms — no interruption to ventilation. The battery provides approximately 30 minutes of operation at typical settings (Vt 500 mL, rate 14, PEEP 5, FiO2 40%). A battery capacity below 60% triggers a low battery technical alarm; below 20% triggers a high-priority alarm with audible tone.",
+        specifications: [
+          { parameter: "AC input", value: "100-240 VAC, 50/60 Hz", unit: "" },
+          { parameter: "+24V rail", value: "24.0", tolerance: "+/- 0.5", unit: "VDC" },
+          { parameter: "+12V rail", value: "12.0", tolerance: "+/- 0.3", unit: "VDC" },
+          { parameter: "+5V rail", value: "5.0", tolerance: "+/- 0.25", unit: "VDC" },
+          { parameter: "+3.3V rail", value: "3.3", tolerance: "+/- 0.15", unit: "VDC" },
+          { parameter: "Battery voltage", value: "14.4", unit: "VDC nominal" },
+          { parameter: "Battery capacity", value: "4.4", unit: "Ah" },
+          { parameter: "Switchover time", value: "< 10", unit: "ms" },
+          { parameter: "Battery runtime (typical)", value: "~30", unit: "minutes" },
+          { parameter: "Low battery alarm", value: "60%", unit: "state of charge" },
+          { parameter: "Critical battery alarm", value: "20%", unit: "state of charge" },
+        ],
+        warnings: [
+          "DANGER: Mains voltage present at the AC inlet. Always disconnect power cord before servicing the power supply.",
+          "WARNING: The battery can supply hazardous voltage. Disconnect the battery cable (connector J20 on the battery management board) before any internal work.",
+          "CAUTION: Use only Drager-approved replacement battery (P/N DRG-8306920). Third-party batteries may not communicate with the battery management system and can cause fires.",
+        ],
+        steps: [
+          "Power down and disconnect mains. Wait 30 seconds.",
+          "Remove the lower-left service panel (4x T10 Torx screws).",
+          "The battery is in a plastic cradle. Disconnect the battery cable from J20 on the battery management board.",
+          "Slide the battery forward out of the cradle.",
+          "Install the new battery, reconnect to J20.",
+          "Reassemble panel, connect mains, power on.",
+          "Navigate to Service > Hardware Tests > Battery. Run the capacity test — takes approximately 2 hours.",
+          "Battery should report > 90% capacity when new. If below 80%, the battery may have been stored too long.",
+        ],
+      },
+      {
+        sectionId: "ev500_5_1",
+        title: "5.1 Pneumatic System Leak Test",
+        content: "The system leak test verifies the integrity of the entire pneumatic path from the gas inlet to the patient port. Leaks in the breathing circuit can cause tidal volume delivery errors, inability to maintain PEEP, auto-cycling, and inaccurate monitoring. The Evita V500 has both an automated leak test (accessible from the service menu) and a manual procedure. A leak rate below 200 mL/min at 30 cmH2O is acceptable for clinical use. Common leak sources include: flow sensor O-rings, exhalation valve O-rings, patient circuit connections (loose fittings), humidifier chamber seals, test port caps left open, and cracked inspiratory/expiratory tubing.",
+        tools: [
+          "Adult test lung with leak-free connection",
+          "Breathing circuit (new, for testing)",
+          "Calibrated pressure manometer (optional, for verifying displayed pressure)",
+        ],
+        steps: [
+          "Connect a complete patient breathing circuit to the ventilator, including inspiratory limb, patient wye, and expiratory limb.",
+          "Connect an adult test lung to the patient wye. Ensure all connections are hand-tight and all port caps are in place.",
+          "Power on the ventilator. Enter the service menu (hold INFO + ALARM SILENCE during boot).",
+          "Navigate to Service > Hardware Tests > Leak Test.",
+          "The system will close the exhalation valve and pressurize the circuit to 30 cmH2O. It then monitors pressure decay over 30 seconds.",
+          "The displayed leak rate must be < 200 mL/min. If the test shows PASS, the circuit is leak-free.",
+          "If FAIL: systematically isolate the leak source. First, disconnect the patient circuit and cap the inspiratory and expiratory ports. Re-run the test. If it now passes, the leak is in the patient circuit. If it still fails, the leak is internal.",
+          "Internal leak sources (most to least common): exhalation valve O-rings (reseat or replace valve), flow sensor O-rings (reseat or replace sensor), inspiratory outlet gasket (replace gasket), internal tubing connections (check all push-fit connectors inside the pneumatic block).",
+          "External leak sources: loose breathing circuit fittings, cracked tubing, humidifier chamber gasket, open suction port cap, improperly seated water trap.",
+        ],
+        specifications: [
+          { parameter: "Test pressure", value: "30", unit: "cmH2O" },
+          { parameter: "Acceptable leak rate", value: "< 200", unit: "mL/min" },
+          { parameter: "Test duration", value: "30", unit: "seconds" },
+        ],
+      },
+      {
+        sectionId: "ev500_6_1",
+        title: "6.1 Preventive Maintenance Schedule",
+        content: "The Drager Evita V500 requires scheduled preventive maintenance to ensure safe and reliable operation. Failure to perform PM tasks at the recommended intervals may result in device malfunction, inaccurate monitoring, or ventilation failure. All PM activities must be documented in the equipment maintenance log.",
+        steps: [
+          "DAILY (by clinical staff): Visual inspection — check all tubing connections, verify alarm settings, confirm backup battery icon shows adequate charge, check water traps and humidifier levels.",
+          "QUARTERLY: O2 sensor cell check — navigate to Service > Sensor Status. If cell voltage < 8 mV or response time > 30 seconds, replace O2 cell (P/N varies by sensor generation). Expected cell lifespan: 12-18 months.",
+          "QUARTERLY: Battery capacity check — navigate to Service > Hardware Tests > Battery. Capacity should be > 70%. If below 70%, replace battery (P/N DRG-8306920).",
+          "SEMI-ANNUAL: Intake air filter replacement — remove the rear panel, replace the foam air filter (P/N DRG-8306800). A clogged filter reduces cooling airflow and contributes to fan module failure.",
+          "SEMI-ANNUAL: Flow sensor calibration verification — run the flow sensor calibration procedure (Section 3.8) with a certified 1L syringe. Post-calibration accuracy must be +/- 10 mL at 500 mL test volume.",
+          "ANNUAL: Full performance verification — test all ventilation modes (VC, PC, SIMV, CPAP/ASB) at multiple settings using a calibrated test lung and flow analyzer. Verify tidal volume accuracy +/- 10%, pressure accuracy +/- 2 cmH2O, rate accuracy +/- 1 BPM.",
+          "ANNUAL: System leak test (Section 5.1). Leak rate must be < 200 mL/min at 30 cmH2O.",
+          "ANNUAL: Electrical safety test per IEC 62353 — ground continuity, earth leakage, enclosure leakage, patient applied parts leakage. Document all results.",
+          "ANNUAL: Exhalation valve inspection — remove valve assembly and inspect diaphragm for wear, discoloration, or deformation. Replace if any defects found (P/N DRG-8412130).",
+          "ANNUAL: Fan module inspection — check fan RPM from Service > Hardware Tests > Fan Module. RPM must be 2800-3200. Clean dust from fan intake and chassis compartment.",
+          "EVERY 2 YEARS (or per Drager recommendation): Replace the exhalation valve diaphragm even if no visible wear. Replace all internal O-rings in the pneumatic block. Replace the backup battery regardless of capacity test results.",
+          "Consumable part numbers: Air filter (DRG-8306800), O2 cell (check current revision), Battery (DRG-8306920), Exhalation valve (DRG-8412130), Flow sensor (DRG-8403735), Calibration syringe (DRG-8403741).",
+        ],
+      },
+      {
         sectionId: "ev500_4_1",
         title: "4.1 Error Code Reference",
         content: "This section lists all user-facing and service error codes for the Evita V500/V800 platform.",
         steps: [
           "Error 12: Flow measurement error. Flow sensor reading outside expected range. Check sensor orientation and calibration. Replace flow sensor (P/N DRG-8403735) if calibration fails.",
-          "Error 22: Exhalation valve regulation error. PEEP deviation exceeds +/- 2 cmH2O from set value. Check exhalation valve assembly (P/N DRG-8412130) for contamination or mechanical failure.",
+          "Error 15: O2 sensor expired. Galvanic O2 cell voltage below minimum threshold. Replace O2 sensor cell. Perform 2-point FiO2 calibration after replacement.",
+          "Error 22: Exhalation valve regulation error. PEEP deviation exceeds +/- 2 cmH2O from set value. Check exhalation valve assembly (P/N DRG-8412130) for contamination or mechanical failure. Run PEEP calibration from service menu.",
+          "Error 25: High airway pressure. Peak inspiratory pressure exceeded the set Pmax alarm limit. Check for kinked tubing, bronchospasm, mucus plugging, or incorrect alarm settings. If pressure is > 60 cmH2O with no patient-side cause, check the inspiratory proportional valve for sticking.",
+          "Error 33: Apnea alarm. No breath detected for the apnea time interval (default 20 seconds). Check patient condition. If false alarm, check flow sensor calibration and trigger sensitivity settings.",
+          "Error 41: Power supply fault. One or more internal voltage rails out of tolerance. Measure all rails at the power supply test points: +24V, +12V, +5V, +3.3V. Replace power supply module if any rail is out of spec.",
+          "Error 45: Battery fault. Battery management system reports a cell imbalance, communication error, or excessive temperature. Remove and reseat battery connector J20. If error persists, replace battery (P/N DRG-8306920).",
           "Error 57: Fan speed below threshold. Cooling fan RPM dropped below 2400. Check fan connector J14, measure 12V supply. Replace fan module (P/N DRG-8306750) if voltage is correct but fan speed is low.",
           "Error 58: Fan not detected. No tachometer signal on J14 pin 3. Check connector seating first. If connector is secure, replace fan module (P/N DRG-8306750).",
+          "Error 62: Touchscreen calibration lost. The touchscreen does not respond to touch correctly. Enter the service menu using the rotary encoder and hardware keys. Navigate to Service > Display > Touch Calibration and follow the on-screen calibration sequence.",
+          "Error 70: Internal communication error. Main CPU and alarm CPU cannot communicate. Power cycle the ventilator. If error recurs, the main PCB may need replacement — contact Drager technical support.",
+        ],
+      },
+      {
+        sectionId: "ev500_5_2",
+        title: "5.2 Alarm System Troubleshooting",
+        content: "The Evita V500 has a three-tier alarm system: high-priority (red, continuous tone), medium-priority (yellow, intermittent tone), and low-priority (yellow, single tone). The alarm system is managed by a dedicated alarm CPU that operates independently from the ventilation control CPU — this is a safety architecture that ensures alarms can still trigger even if the main processor fails. Common alarm troubleshooting scenarios include false alarms, alarms not triggering when expected, and alarm volume issues.",
+        steps: [
+          "FALSE HIGH-PRESSURE ALARMS: Check for water in the pressure sampling line. Disconnect the sampling line from the airway pressure transducer (located on the pneumatic block) and blow through it to clear condensate. Reconnect and verify. Also check that the Pmax alarm limit is set appropriately (typically 10-15 cmH2O above the peak inspiratory pressure).",
+          "FALSE APNEA ALARMS: Usually caused by flow sensor drift or low trigger sensitivity. Recalibrate the flow sensor (Section 3.8). If the patient is on pressure support with a low respiratory drive, increase the apnea time or adjust trigger sensitivity.",
+          "FALSE DISCONNECT ALARMS: Check circuit connections, especially the patient wye and flow sensor. A partially dislodged flow sensor will cause intermittent disconnect alarms. Verify expired tidal volume is reading correctly.",
+          "ALARM NOT AUDIBLE: Check the alarm volume setting (adjustable from the alarm menu). Minimum volume in ICU mode is 45 dB at 1 meter. If volume is set correctly but alarm is quiet, the internal speaker may have failed. Access the speaker (located behind the upper-right ventilation grille) and test with a multimeter — impedance should be 8 ohms +/- 20%. Replace speaker if open circuit or out of spec.",
+          "ALARM CPU FAULT (Error 70): The dedicated alarm CPU has lost communication with the main CPU. This is a critical fault — the ventilator should be removed from clinical use. Power cycle first. If error recurs, the main PCB requires replacement.",
+          "TESTING ALARMS: From the service menu, navigate to Service > Hardware Tests > Alarm Test. This cycles through all alarm tones and LED indicators. Verify red LED (high priority), yellow LED (medium priority), and audible tones at all three priority levels.",
+        ],
+        warnings: [
+          "WARNING: Never disable alarms during clinical use. If an alarm is repeatedly triggering, investigate and resolve the root cause rather than silencing or disabling it.",
+          "CAUTION: The alarm system's independent CPU architecture means that even a main processor crash will not prevent alarms from sounding. If both CPUs fail simultaneously (no alarms AND no ventilation), this indicates a power supply failure — switch to backup ventilation immediately.",
         ],
       },
     ],
@@ -838,6 +1002,78 @@ const serviceManuals: ServiceManual[] = [
         specifications: [
           { parameter: "Backlight supply voltage (expected)", value: "19.5", tolerance: "+/- 0.5", unit: "VDC" },
           { parameter: "Backlight current draw (normal)", value: "0.8", tolerance: "+/- 0.1", unit: "A" },
+        ],
+      },
+      {
+        sectionId: "mx800_3_1",
+        title: "3.1 SpO2 Module Troubleshooting and Replacement",
+        content: "The MX800 uses plug-in measurement modules for SpO2 monitoring. The M1020B module (P/N PHI-M1020B) provides Nellcor-compatible pulse oximetry. The module connects to the measurement server via a 96-pin backplane connector in the module bay. Common failure modes: 'SpO2 No Signal' (usually a sensor or cable issue, not the module), 'SpO2 Module Failure' (module hardware fault), and persistent low-quality plethysmography waveform (degraded module front-end). Troubleshooting flow: first try a known-good sensor and cable. If the problem persists with known-good accessories, replace the module. The module is hot-swappable — no power cycle required.",
+        specifications: [
+          { parameter: "SpO2 accuracy (70-100%)", value: "+/- 2", unit: "% SpO2 (adults)" },
+          { parameter: "SpO2 accuracy (< 70%)", value: "unspecified", unit: "" },
+          { parameter: "Pulse rate range", value: "30-250", unit: "BPM" },
+          { parameter: "Pulse rate accuracy", value: "+/- 3", unit: "BPM" },
+          { parameter: "Sensor compatibility", value: "Nellcor OxiMax", unit: "" },
+          { parameter: "Module weight", value: "0.3", unit: "kg" },
+          { parameter: "Backplane connector", value: "96-pin DIN 41612", unit: "" },
+        ],
+        steps: [
+          "If 'SpO2 No Signal' or poor waveform: first try a known-good sensor on the patient. Clean the sensor site (nail polish, dirt can affect readings).",
+          "Try a known-good SpO2 cable between the sensor and module. Inspect cable for kinks, exposed wires, or damaged connectors.",
+          "If the issue persists with known-good sensor and cable, the module itself has likely failed.",
+          "To replace: disconnect the SpO2 sensor cable from the module front panel.",
+          "Press the module release lever at the bottom of the module face and slide the module out of the bay.",
+          "Inspect the bay's 96-pin backplane connector for bent pins (use a flashlight).",
+          "Slide the new M1020B module in until the release lever clicks.",
+          "The MX800 auto-detects the module within 5-10 seconds. Reconnect the sensor and verify a good waveform.",
+          "Navigate to Setup > Modules to confirm the module shows status 'OK'.",
+        ],
+        warnings: [
+          "CAUTION: The 96-pin backplane connector is fragile. If the module does not slide in smoothly, do not force it — check for alignment.",
+          "NOTE: SpO2 readings may be inaccurate in the presence of methemoglobin, carboxyhemoglobin, or intravascular dyes (methylene blue).",
+        ],
+      },
+      {
+        sectionId: "mx800_3_3",
+        title: "3.3 ECG Acquisition Troubleshooting",
+        content: "The MX800 ECG front-end acquires up to 12 leads simultaneously via the trunk cable (P/N PHI-M1668A for 5-lead, or PHI-M1644A for 3-lead). The ECG signal path: skin electrodes → lead wires → trunk cable → ECG module input → instrumentation amplifier → 16-bit ADC → DSP (digital filtering, arrhythmia detection, ST analysis). Common issues: noisy baseline (60 Hz interference, poor electrode contact), lead-off alarms (broken wire, dry electrode gel), loss of arrhythmia detection (incorrect lead placement, algorithm configuration).",
+        specifications: [
+          { parameter: "ECG input impedance", value: "> 5", unit: "MΩ" },
+          { parameter: "CMRR (Common Mode Rejection)", value: "> 100", unit: "dB" },
+          { parameter: "Frequency response (monitor mode)", value: "0.5-40", unit: "Hz" },
+          { parameter: "Frequency response (diagnostic mode)", value: "0.05-150", unit: "Hz" },
+          { parameter: "Lead-off detection threshold", value: "100", unit: "kΩ" },
+          { parameter: "Trunk cable resistance (per conductor)", value: "< 5", unit: "Ω" },
+          { parameter: "Supported lead sets", value: "3, 5, 6, or 12-lead", unit: "" },
+        ],
+        steps: [
+          "NOISY BASELINE: Check electrode quality (gel moist, good skin contact). Replace electrodes if > 24 hours old. Ensure electrodes are on clean, dry skin (prep with alcohol wipe, abrade lightly if needed).",
+          "60 Hz INTERFERENCE: Move electrode leads away from AC power cables. Check that all leads are plugged into the trunk cable (an unplugged lead acts as an antenna). Check facility grounding — the monitor chassis must be properly grounded.",
+          "LEAD-OFF ALARMS: Check the specific lead indicated on the alarm. Inspect the lead wire from the electrode snap to the trunk cable connector. Measure continuity with a multimeter — should be < 5Ω. Replace individual lead wires if open circuit.",
+          "TRUNK CABLE FAILURE: If multiple leads show intermittent faults, the trunk cable itself may be damaged. Inspect for visible damage (kinks, cuts, connector corrosion). Replace trunk cable (P/N PHI-M1668A for 5-lead).",
+          "ECG MODULE FAILURE: If ECG is not available even with a known-good cable, the ECG input on the measurement server may have failed. This requires measurement server replacement — contact Philips service.",
+          "ARRHYTHMIA DETECTION ISSUES: Verify the ECG lead selection (Lead II is standard for arrhythmia monitoring). Check that arrhythmia analysis is enabled in the monitor configuration. Verify electrode placement follows standard limb lead positions.",
+        ],
+        warnings: [
+          "WARNING: ECG monitoring may be affected during electrosurgery (electrocautery). This is normal and does not indicate a monitor fault. The monitor will typically recover within 10 seconds after cautery stops.",
+          "CAUTION: Do not use ECG electrodes with dried or expired gel. This increases skin-electrode impedance and causes noisy signals and false lead-off alarms.",
+        ],
+      },
+      {
+        sectionId: "mx800_8_1",
+        title: "8.1 Preventive Maintenance Schedule",
+        content: "The Philips IntelliVue MX800 requires scheduled preventive maintenance to ensure accurate patient monitoring and safe operation. All PM results must be documented.",
+        steps: [
+          "MONTHLY: Visual inspection — check housing for cracks, verify all module bay slots have modules or blank plates installed, inspect power cord for damage, check display for dead pixels or discoloration.",
+          "MONTHLY: Alarm test — navigate to Setup > System > Alarm Test. Verify all audible and visual alarm indicators function (red LED, yellow LED, audible tones at all priorities).",
+          "QUARTERLY: SpO2 accuracy check — use a certified SpO2 simulator (e.g., Masimo Radical or Fluke Index 2) to verify SpO2 reading accuracy. Readings should be within +/- 2% SpO2 across the 70-100% range.",
+          "QUARTERLY: ECG simulator test — connect an ECG patient simulator to the trunk cable. Verify normal sinus rhythm displays correctly, heart rate is accurate (+/- 1 BPM of simulator output), and arrhythmia detection triggers correctly for VFib and asystole.",
+          "QUARTERLY: Battery capacity check — navigate to Setup > System > Battery. Run the capacity test. Battery should maintain > 70% of rated capacity. Replace if below 70%.",
+          "SEMI-ANNUAL: NIBP accuracy verification — connect a NIBP simulator or calibrated T-tube with mercury manometer. Verify static pressure accuracy (+/- 3 mmHg across 0-300 mmHg range per AAMI SP10). Verify measurement accuracy against a reference at systolic 120, diastolic 80 (+/- 5 mmHg).",
+          "ANNUAL: Electrical safety test per IEC 62353 — ground continuity (< 0.3Ω), earth leakage (< 500 µA), enclosure leakage (< 100 µA), patient applied parts leakage (< 50 µA CF type). Document all results.",
+          "ANNUAL: Full performance verification of all installed modules (SpO2, ECG, NIBP, IBP, EtCO2). Test each parameter against calibrated simulators.",
+          "ANNUAL: Software update check — verify the monitor is running the latest approved software version. Update if a newer version is available from Philips.",
+          "Consumable P/Ns: ECG trunk cable 5-lead (PHI-M1668A), SpO2 module (PHI-M1020B), Power supply (PHI-453564020911), LCD display (PHI-453564243681).",
         ],
       },
       {
@@ -1103,10 +1339,11 @@ async function seed(): Promise<void> {
   await partBatch.commit();
   console.log("  Parts seeded successfully.\n");
 
-  // Seed repair guides
-  console.log(`Seeding ${repairGuides.length} repair guides...`);
+  // Seed repair guides (original + generated extras)
+  const allGuides = [...repairGuides, ...extraRepairGuides];
+  console.log(`Seeding ${allGuides.length} repair guides...`);
   const guideBatch = db.batch();
-  for (const guide of repairGuides) {
+  for (const guide of allGuides) {
     const ref = db.collection("repair_guides").doc(guide.partId);
     guideBatch.set(ref, guide);
   }
@@ -1126,7 +1363,7 @@ async function seed(): Promise<void> {
   console.log("Seeding complete!");
   console.log(`  - ${suppliers.length} suppliers`);
   console.log(`  - ${parts.length} parts`);
-  console.log(`  - ${repairGuides.length} repair guides`);
+  console.log(`  - ${allGuides.length} repair guides`);
   console.log(`  - ${serviceManuals.length} service manuals`);
 }
 
