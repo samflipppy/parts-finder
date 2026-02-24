@@ -64,10 +64,20 @@ export interface RequestMetrics {
 }
 
 // ---------------------------------------------------------------------------
-// Module-level active collector (request-scoped via set/get)
+// Streaming event types
+// ---------------------------------------------------------------------------
+
+export type StreamChunk =
+  | { type: "tool_done"; toolName: string; resultCount: number; latencyMs: number }
+  | { type: "text_chunk"; text: string }
+  | { type: "phase_structuring" };
+
+// ---------------------------------------------------------------------------
+// Module-level singletons
 // ---------------------------------------------------------------------------
 
 let _activeCollector: MetricsCollector | null = null;
+let _activeChunkEmitter: ((chunk: StreamChunk) => void) | null = null;
 
 export function setActiveCollector(collector: MetricsCollector | null): void {
   _activeCollector = collector;
@@ -77,8 +87,12 @@ export function getActiveCollector(): MetricsCollector | null {
   return _activeCollector;
 }
 
+export function setActiveChunkEmitter(fn: ((chunk: StreamChunk) => void) | null): void {
+  _activeChunkEmitter = fn;
+}
+
 // ---------------------------------------------------------------------------
-// MetricsCollector — one instance per request
+// MetricsCollector
 // ---------------------------------------------------------------------------
 
 export class MetricsCollector {
@@ -109,10 +123,7 @@ export class MetricsCollector {
       filterSteps,
       ragTrace,
     });
-
-    console.log(
-      `[metrics] ${toolName} completed in ${latencyMs}ms — ${resultCount} results`
-    );
+    _activeChunkEmitter?.({ type: "tool_done", toolName, resultCount, latencyMs });
   }
 
   /** Produce the final metrics snapshot after the agent flow completes. */
@@ -162,7 +173,10 @@ export class MetricsCollector {
 export async function saveMetrics(metrics: RequestMetrics): Promise<void> {
   try {
     const db = getFirestore();
-    await db.collection("diagnostics").doc(metrics.requestId).set(metrics);
+    // JSON round-trip strips undefined values — Firestore rejects them
+    // (e.g. optional filterSteps/ragTrace fields on tool calls that don't use them)
+    const data = JSON.parse(JSON.stringify(metrics));
+    await db.collection("diagnostics").doc(metrics.requestId).set(data);
     console.log(`[metrics] Saved to diagnostics/${metrics.requestId}`);
   } catch (err) {
     // Non-blocking — metrics should never break the main request

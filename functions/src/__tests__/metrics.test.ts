@@ -1,7 +1,5 @@
 /**
- * Unit tests for MetricsCollector, RAGTraceData, and aggregateMetrics.
- *
- * These are pure logic tests — no Firestore, no LLM, no network.
+ * Tests for MetricsCollector and aggregateMetrics.
  */
 
 import {
@@ -14,11 +12,6 @@ import {
 } from "../metrics";
 import type { AgentResponse } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Minimal AgentResponse that satisfies the finalize() contract. */
 function makeAgentResponse(overrides: Partial<AgentResponse> = {}): AgentResponse {
   return {
     diagnosis: "Test diagnosis",
@@ -33,7 +26,6 @@ function makeAgentResponse(overrides: Partial<AgentResponse> = {}): AgentRespons
   };
 }
 
-/** Build a minimal RequestMetrics for aggregation tests. */
 function makeMetrics(overrides: Partial<RequestMetrics> = {}): RequestMetrics {
   return {
     requestId: "test-id",
@@ -53,10 +45,6 @@ function makeMetrics(overrides: Partial<RequestMetrics> = {}): RequestMetrics {
     ...overrides,
   };
 }
-
-// ---------------------------------------------------------------------------
-// MetricsCollector
-// ---------------------------------------------------------------------------
 
 describe("MetricsCollector", () => {
   it("generates a unique requestId", () => {
@@ -79,7 +67,6 @@ describe("MetricsCollector", () => {
     expect(metrics.toolSequence).toEqual(["searchParts", "getSuppliers"]);
     expect(metrics.toolCalls).toHaveLength(2);
 
-    // First tool call
     expect(metrics.toolCalls[0].toolName).toBe("searchParts");
     expect(metrics.toolCalls[0].resultCount).toBe(3);
     expect(metrics.toolCalls[0].latencyMs).toBe(120);
@@ -129,10 +116,9 @@ describe("MetricsCollector", () => {
 
   it("computes totalLatencyMs as wall-clock time", () => {
     const c = new MetricsCollector();
-    // No tool calls, just finalize immediately
     const metrics = c.finalize("test", makeAgentResponse());
     expect(metrics.totalLatencyMs).toBeGreaterThanOrEqual(0);
-    expect(metrics.totalLatencyMs).toBeLessThan(1000); // Should be nearly instant
+    expect(metrics.totalLatencyMs).toBeLessThan(1000);
   });
 
   it("computes avgToolLatencyMs correctly", () => {
@@ -142,7 +128,7 @@ describe("MetricsCollector", () => {
     c.recordToolCall("getRepairGuide", {}, 1, 300);
 
     const metrics = c.finalize("test", makeAgentResponse());
-    expect(metrics.avgToolLatencyMs).toBe(200); // (100+200+300)/3
+    expect(metrics.avgToolLatencyMs).toBe(200);
   });
 
   it("handles zero tool calls gracefully", () => {
@@ -192,10 +178,6 @@ describe("MetricsCollector", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Module-level collector (request-scoped context)
-// ---------------------------------------------------------------------------
-
 describe("setActiveCollector / getActiveCollector", () => {
   afterEach(() => {
     setActiveCollector(null);
@@ -220,10 +202,6 @@ describe("setActiveCollector / getActiveCollector", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// aggregateMetrics
-// ---------------------------------------------------------------------------
-
 describe("aggregateMetrics", () => {
   it("returns zeroed stats for empty input", () => {
     const result = aggregateMetrics([]);
@@ -245,9 +223,9 @@ describe("aggregateMetrics", () => {
     const result = aggregateMetrics(metrics);
 
     expect(result.totalRequests).toBe(3);
-    expect(result.avgLatencyMs).toBe(2000); // (1000+2000+3000)/3
-    expect(result.avgToolCalls).toBe(3);    // (3+2+4)/3
-    expect(result.partFoundRate).toBe(66.7); // 2/3 * 100
+    expect(result.avgLatencyMs).toBe(2000);
+    expect(result.avgToolCalls).toBe(3);
+    expect(result.partFoundRate).toBe(66.7);
   });
 
   it("counts confidence distribution correctly", () => {

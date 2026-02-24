@@ -1,16 +1,5 @@
 /**
  * Technician workflow simulation tests.
- *
- * These verify the full guided conversation flow works end-to-end:
- *
- *   1. Tech arrives → agent asks for make/model
- *   2. Tech provides info → agent searches manual + diagnoses
- *   3. Tech asks follow-up during repair → agent provides guidance
- *   4. Broken part found → agent recommends parts with buy-ready data
- *   5. Tech asks about a specific step → agent quotes manual
- *
- * We simulate the agent responses (no LLM) to verify the data contracts
- * at each step — the same data the frontend renders.
  */
 
 import type { ChatMessage, ChatAgentResponse } from "../types";
@@ -19,11 +8,6 @@ import {
   setActiveCollector,
 } from "../metrics";
 
-// ---------------------------------------------------------------------------
-// Helpers: simulate what the API does
-// ---------------------------------------------------------------------------
-
-/** Build a conversation history from alternating messages. */
 function buildConversation(
   ...turns: Array<{ role: "user" | "assistant"; content: string; imageBase64?: string }>
 ): ChatMessage[] {
@@ -34,7 +18,6 @@ function buildConversation(
   }));
 }
 
-/** Verify a response has all required fields and no undefined values. */
 function assertValidResponse(response: ChatAgentResponse): void {
   expect(response.type).toBeDefined();
   expect(["diagnosis", "clarification", "guidance", "photo_analysis"]).toContain(response.type);
@@ -47,21 +30,13 @@ function assertValidResponse(response: ChatAgentResponse): void {
   expect(typeof response.reasoning).toBe("string");
 }
 
-// ---------------------------------------------------------------------------
-// Workflow: Full repair session simulation
-// ---------------------------------------------------------------------------
-
 describe("Technician repair workflow", () => {
 
-  // ---- Step 1: Tech arrives with vague message ----
-
   it("Step 1: Agent asks clarifying questions when info is missing", () => {
-    // Conversation context (validated separately in edge case tests)
     buildConversation(
       { role: "user", content: "Hey, my ventilator is acting up" }
     );
 
-    // Simulate the agent's clarification response
     const response: ChatAgentResponse = {
       type: "clarification",
       message: "I can help with that. What's the make and model of the ventilator? And what symptoms are you seeing — any error codes on the display?",
@@ -83,8 +58,6 @@ describe("Technician repair workflow", () => {
     expect(response.message).toContain("make and model");
   });
 
-  // ---- Step 2: Tech provides make/model/symptoms → diagnosis ----
-
   it("Step 2: Agent diagnoses with manual refs and part recommendation", () => {
     const messages = buildConversation(
       { role: "user", content: "Hey, my ventilator is acting up" },
@@ -92,11 +65,9 @@ describe("Technician repair workflow", () => {
       { role: "user", content: "Drager Evita V500, showing Error 57. The fan isn't spinning." }
     );
 
-    // Simulate the agent searching the manual and parts DB
     const collector = new MetricsCollector();
     setActiveCollector(collector);
 
-    // Record what the tools would return
     collector.recordToolCall(
       "searchManual",
       { manufacturer: "Drager", equipmentName: "Evita V500", keyword: "Error 57 fan" },
@@ -195,37 +166,24 @@ describe("Technician repair workflow", () => {
 
     assertValidResponse(response);
 
-    // --- Verify diagnosis has everything the UI needs ---
-
-    // Part card (Buy button target)
     expect(response.recommendedPart).not.toBeNull();
     expect(response.recommendedPart!.partNumber).toBe("EVITA-FM-001");
     expect(response.recommendedPart!.avgPrice).toBe(45000);
     expect(response.recommendedPart!.criticality).toBe("critical");
 
-    // Alternative parts (each gets a Buy button too)
     expect(response.alternativeParts).toHaveLength(1);
     expect(response.alternativeParts[0].partNumber).toBeTruthy();
 
-    // Manual references (quoted text the UI renders in blockquotes)
     expect(response.manualReferences).toHaveLength(1);
     expect(response.manualReferences[0].quotedText).toContain("2,400 RPM");
 
-    // Repair guide (shown in the bubble)
     expect(response.repairGuide).not.toBeNull();
     expect(response.repairGuide!.steps.length).toBeGreaterThan(0);
     expect(response.repairGuide!.safetyWarnings.length).toBeGreaterThan(0);
 
-    // Supplier ranking
     expect(response.supplierRanking).toHaveLength(2);
-
-    // Warnings (yellow boxes in the UI)
     expect(response.warnings.length).toBeGreaterThan(0);
-
-    // Confidence badge
     expect(response.confidence).toBe("high");
-
-    // --- Verify metrics captured RAG trace ---
 
     const metricsResult = collector.finalize(
       messages[messages.length - 1].content,
@@ -236,7 +194,7 @@ describe("Technician repair workflow", () => {
         supplierRanking: response.supplierRanking,
         alternativeParts: response.alternativeParts,
         confidence: response.confidence ?? "medium",
-        reasoning: response.reasoning,
+        reasoning: response.reasoning ?? "",
         warnings: response.warnings,
       }
     );
@@ -246,7 +204,6 @@ describe("Technician repair workflow", () => {
     expect(metricsResult.partFound).toBe(true);
     expect(metricsResult.recommendedPartNumber).toBe("EVITA-FM-001");
 
-    // RAG trace on the searchManual call
     const searchManualCall = metricsResult.toolCalls.find(
       (tc) => tc.toolName === "searchManual"
     );
@@ -255,7 +212,6 @@ describe("Technician repair workflow", () => {
     expect(searchManualCall!.ragTrace!.searchMode).toBe("vector");
     expect(searchManualCall!.ragTrace!.topScores[0].score).toBe(0.89);
 
-    // Filter steps on the searchParts call
     const searchPartsCall = metricsResult.toolCalls.find(
       (tc) => tc.toolName === "searchParts"
     );
@@ -266,10 +222,7 @@ describe("Technician repair workflow", () => {
     setActiveCollector(null);
   });
 
-  // ---- Step 3: Tech asks a mid-repair question ----
-
   it("Step 3: Agent provides step-specific guidance during repair", () => {
-    // Continuing from a diagnosis — tech is now on step 2
     const response: ChatAgentResponse = {
       type: "guidance",
       message: "The J12 connector on the Evita V500 is a Molex 12-pin connector. Per the manual, press the latch tab and pull straight back — don't rock it side to side.",
@@ -296,11 +249,8 @@ describe("Technician repair workflow", () => {
     expect(response.type).toBe("guidance");
     expect(response.manualReferences).toHaveLength(1);
     expect(response.manualReferences[0].quotedText).toContain("Molex 12-pin");
-    // Guidance shouldn't have parts
     expect(response.recommendedPart).toBeNull();
   });
-
-  // ---- Step 4: Tech sends a photo ----
 
   it("Step 4: Agent analyzes a photo and references manual specs", () => {
     const response: ChatAgentResponse = {
@@ -326,13 +276,10 @@ describe("Technician repair workflow", () => {
 
     assertValidResponse(response);
     expect(response.type).toBe("photo_analysis");
-    // Should NOT say "that looks fine" — present the spec instead
     expect(response.message).not.toContain("looks fine");
     expect(response.message).not.toContain("acceptable");
     expect(response.manualReferences[0].quotedText).toContain("0.05 mm");
   });
-
-  // ---- Step 5: Buy button data contract ----
 
   it("Step 5: Part data has everything the Buy button needs", () => {
     const response: ChatAgentResponse = {
@@ -375,21 +322,18 @@ describe("Technician repair workflow", () => {
 
     assertValidResponse(response);
 
-    // The Buy button in the UI needs these fields:
     const part = response.recommendedPart!;
-    expect(part.partNumber).toBeTruthy(); // Needed for Part Source link
-    expect(part.name).toBeTruthy();       // Display name
-    expect(typeof part.avgPrice).toBe("number"); // Price display
+    expect(part.partNumber).toBeTruthy();
+    expect(part.name).toBeTruthy();
+    expect(typeof part.avgPrice).toBe("number");
     expect(part.avgPrice).toBeGreaterThan(0);
 
-    // Each alternative also gets a Buy button
     for (const alt of response.alternativeParts) {
-      expect(alt.partNumber).toBeTruthy(); // Buy button needs this
+      expect(alt.partNumber).toBeTruthy();
       expect(alt.name).toBeTruthy();
-      expect(alt.reason).toBeTruthy();     // Shown next to Buy
+      expect(alt.reason).toBeTruthy();
     }
 
-    // Supplier ranking shown alongside parts
     for (const supplier of response.supplierRanking) {
       expect(supplier.supplierName).toBeTruthy();
       expect(typeof supplier.qualityScore).toBe("number");
@@ -397,10 +341,6 @@ describe("Technician repair workflow", () => {
     }
   });
 });
-
-// ---------------------------------------------------------------------------
-// Edge cases
-// ---------------------------------------------------------------------------
 
 describe("Workflow edge cases", () => {
   it("handles off-domain query gracefully", () => {
@@ -455,12 +395,10 @@ describe("Workflow edge cases", () => {
       { role: "user", content: "How do I disconnect J12?" }
     );
 
-    // Verify conversation structure
     expect(conversation).toHaveLength(7);
     expect(conversation[0].role).toBe("user");
     expect(conversation[conversation.length - 1].role).toBe("user");
 
-    // History (all but last) for Genkit
     const history = conversation.slice(0, -1);
     const current = conversation[conversation.length - 1];
     expect(history).toHaveLength(6);

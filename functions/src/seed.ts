@@ -14,8 +14,6 @@ import { getFirestore } from "firebase-admin/firestore";
 import { Part, Supplier, RepairGuide, ServiceManual } from "./types";
 import { extraRepairGuides } from "./__generated__/repair-guides-extra";
 
-// Initialize Firebase Admin — uses GOOGLE_APPLICATION_CREDENTIALS or
-// falls back to the default emulator connection when running locally.
 initializeApp();
 const db = getFirestore();
 
@@ -633,7 +631,7 @@ const repairGuides: RepairGuide[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Service Manuals (V2 — diagnostic partner)
+// Service Manuals
 // ---------------------------------------------------------------------------
 
 const serviceManuals: ServiceManual[] = [

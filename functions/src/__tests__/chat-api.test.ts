@@ -1,15 +1,8 @@
 /**
  * Tests for the /api/chat request validation logic.
- *
- * These verify the input validation rules from index.ts without spinning up
- * an HTTP server — we test the validation logic directly.
  */
 
 import type { ChatMessage } from "../types";
-
-// ---------------------------------------------------------------------------
-// Replicate the validation logic from index.ts so we can test it in isolation
-// ---------------------------------------------------------------------------
 
 interface ValidationResult {
   valid: boolean;
@@ -65,13 +58,7 @@ function validateChatRequest(body: Record<string, unknown>): ValidationResult {
   return { valid: true };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe("/api/chat request validation", () => {
-  // --- Valid requests ---
-
   it("accepts a single user message", () => {
     const result = validateChatRequest({
       messages: [{ role: "user", content: "What equipment should I check?" }],
@@ -99,8 +86,6 @@ describe("/api/chat request validation", () => {
     expect(result.valid).toBe(true);
   });
 
-  // --- Missing / invalid messages field ---
-
   it("rejects when messages field is missing", () => {
     const result = validateChatRequest({});
     expect(result.valid).toBe(false);
@@ -117,8 +102,6 @@ describe("/api/chat request validation", () => {
     const result = validateChatRequest({ messages: [] });
     expect(result.valid).toBe(false);
   });
-
-  // --- Invalid message structure ---
 
   it("rejects message with invalid role", () => {
     const result = validateChatRequest({
@@ -157,8 +140,6 @@ describe("/api/chat request validation", () => {
     expect(result.valid).toBe(false);
   });
 
-  // --- Last message must be from user ---
-
   it("rejects when last message is from assistant", () => {
     const result = validateChatRequest({
       messages: [
@@ -169,8 +150,6 @@ describe("/api/chat request validation", () => {
     expect(result.valid).toBe(false);
     expect(result.error).toContain("last message");
   });
-
-  // --- Size limits ---
 
   it("rejects conversation over 50,000 characters", () => {
     const longContent = "x".repeat(51000);
@@ -190,13 +169,7 @@ describe("/api/chat request validation", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Response structure contract tests
-// ---------------------------------------------------------------------------
-
 describe("ChatAgentResponse contract", () => {
-  // These test what the frontend expects to receive
-
   it("diagnosis response has all fields the UI needs for part cards", () => {
     const response = {
       type: "diagnosis",
@@ -220,14 +193,12 @@ describe("ChatAgentResponse contract", () => {
       warnings: [],
     };
 
-    // The frontend renders part cards — verify required fields exist
     expect(response.recommendedPart).toBeTruthy();
     expect(response.recommendedPart!.name).toBeTruthy();
     expect(response.recommendedPart!.partNumber).toBeTruthy();
     expect(typeof response.recommendedPart!.avgPrice).toBe("number");
     expect(response.recommendedPart!.criticality).toBeTruthy();
 
-    // Alternatives need name, partNumber, reason for the alt card
     expect(response.alternativeParts[0].name).toBeTruthy();
     expect(response.alternativeParts[0].partNumber).toBeTruthy();
     expect(response.alternativeParts[0].reason).toBeTruthy();
@@ -285,7 +256,6 @@ describe("ChatAgentResponse contract", () => {
   });
 
   it("_metrics in response has the structure the trace UI expects", () => {
-    // This is what the backend appends: { ...response, _metrics: metrics }
     const metrics = {
       requestId: "test-123",
       timestamp: "2025-01-01T00:00:00Z",
@@ -324,7 +294,6 @@ describe("ChatAgentResponse contract", () => {
       avgToolLatencyMs: 450,
     };
 
-    // Verify the trace UI can find what it needs
     expect(metrics.toolCalls[0].ragTrace).toBeDefined();
     expect(metrics.toolCalls[0].ragTrace!.topScores).toBeInstanceOf(Array);
     expect(metrics.toolCalls[0].ragTrace!.searchMode).toBe("vector");

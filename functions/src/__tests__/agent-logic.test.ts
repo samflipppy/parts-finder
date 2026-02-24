@@ -1,16 +1,10 @@
 /**
- * Tests for the core agent logic: cosine similarity, parts filtering,
- * and response structure validation via Zod schemas.
- *
- * These run without Firestore or LLM — pure logic tests.
+ * Unit tests for core agent logic: cosine similarity, parts filtering,
+ * and response schema validation. No Firestore or LLM required.
  */
 
 import { z } from "zod";
 import type { Part, SectionEmbedding } from "../types";
-
-// ---------------------------------------------------------------------------
-// Cosine similarity (mirrors the private function in agent.ts)
-// ---------------------------------------------------------------------------
 
 function cosineSimilarity(a: number[], b: number[]): number {
   let dotProduct = 0;
@@ -70,10 +64,6 @@ describe("cosineSimilarity", () => {
     expect(Math.abs(score)).toBeLessThan(0.3);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Parts filtering logic (mirrors searchParts tool)
-// ---------------------------------------------------------------------------
 
 const testParts: Part[] = [
   {
@@ -234,10 +224,6 @@ describe("searchParts filtering logic", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// RAG pipeline logic (vector search threshold + top-K)
-// ---------------------------------------------------------------------------
-
 describe("RAG pipeline — threshold and top-K logic", () => {
   const SIMILARITY_THRESHOLD = 0.3;
   const TOP_K = 5;
@@ -311,10 +297,6 @@ describe("RAG pipeline — threshold and top-K logic", () => {
     expect(results[0].sectionTitle).toBe("At Threshold");
   });
 });
-
-// ---------------------------------------------------------------------------
-// Response schema validation (Zod)
-// ---------------------------------------------------------------------------
 
 const ChatAgentResponseSchema = z.object({
   type: z.enum(["diagnosis", "clarification", "guidance", "photo_analysis"]),
@@ -511,10 +493,6 @@ describe("ChatAgentResponse schema validation", () => {
     expect(result.success).toBe(false);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Embedding metadata filter logic (mirrors searchManual pre-vector step)
-// ---------------------------------------------------------------------------
 
 describe("searchManual metadata filtering", () => {
   const testEmbeddings: Omit<SectionEmbedding, "embedding" | "embeddedText">[] = [

@@ -35,7 +35,7 @@ export interface RepairGuide {
 }
 
 // ---------------------------------------------------------------------------
-// V2: Service manuals for diagnostic partner
+// Service manuals
 // ---------------------------------------------------------------------------
 
 export interface ManualSpecification {
@@ -74,28 +74,18 @@ export interface ServiceManual {
 }
 
 // ---------------------------------------------------------------------------
-// V2: Section embeddings for RAG (vector search)
+// Section embeddings
 // ---------------------------------------------------------------------------
 
-// This is a "flattened" section stored alongside its embedding vector.
-// Each manual section becomes one document in the section_embeddings collection.
-// The embedding is a 3072-dimensional vector from Gemini's gemini-embedding-001.
 export interface SectionEmbedding {
-  // Identifiers — which manual and section this came from
   manualId: string;
   sectionId: string;
   manualTitle: string;
   sectionTitle: string;
   manufacturer: string;
   equipmentName: string;
-
-  // The text that was embedded (title + content + specs + warnings combined)
   embeddedText: string;
-
-  // The embedding vector itself — 3072 floats from gemini-embedding-001
   embedding: number[];
-
-  // The original section data (so we can return it without a second lookup)
   content: string;
   specifications?: ManualSpecification[];
   warnings?: string[];
@@ -104,17 +94,17 @@ export interface SectionEmbedding {
 }
 
 // ---------------------------------------------------------------------------
-// V2: Chat messages for multi-turn conversation
+// Chat messages
 // ---------------------------------------------------------------------------
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  imageBase64?: string;        // optional base64-encoded image (JPEG/PNG)
+  imageBase64?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Agent responses (V1 + V2)
+// Agent responses
 // ---------------------------------------------------------------------------
 
 export interface AgentResponse {
@@ -155,7 +145,7 @@ export interface ManualReference {
   sectionId: string;
   sectionTitle: string;
   quotedText: string;          // exact quote from the manual
-  pageHint?: string;           // e.g. "Section 3.7, p. 42"
+  pageHint?: string | null;    // e.g. "Section 3.7, p. 42"
 }
 
 export interface ChatAgentResponse {
@@ -190,46 +180,7 @@ export interface ChatAgentResponse {
     reason: string;
   }>;
   confidence: "high" | "medium" | "low" | null;
-  reasoning: string | null;  // null for clarification when no tools were used
+  reasoning: string | null;
   warnings: string[];
 }
 
-// ---------------------------------------------------------------------------
-// Eval types
-// ---------------------------------------------------------------------------
-
-export interface EvalTestCase {
-  id: string;
-  name: string;
-  input: string;
-  expectedPartNumber: string | null; // null = no match expected
-  expectedConfidence: "high" | "medium" | "low";
-  mustCallTools: string[];
-  tags: string[];
-}
-
-export interface EvalCaseResult {
-  testCase: EvalTestCase;
-  passed: boolean;
-  partMatch: boolean;
-  confidenceMatch: boolean;
-  toolsCompliant: boolean;
-  actualPartNumber: string | null;
-  actualConfidence: string;
-  actualToolSequence: string[];
-  latencyMs: number;
-  error: string | null;
-}
-
-export interface EvalRunSummary {
-  runId: string;
-  timestamp: string;
-  totalCases: number;
-  passed: number;
-  failed: number;
-  passRate: number;
-  partAccuracy: number;
-  confidenceAccuracy: number;
-  avgLatencyMs: number;
-  results: EvalCaseResult[];
-}
