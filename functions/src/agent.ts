@@ -94,7 +94,6 @@ export const diagnosticPartnerChat = ai.defineFlow(
         z.object({
           role: z.enum(["user", "assistant"]),
           content: z.string(),
-          imageBase64: z.string().optional(),
         })
       ),
     }),
@@ -121,23 +120,10 @@ export const diagnosticPartnerChat = ai.defineFlow(
       maxTurns: 12,
     };
 
-    if (currentMessage.imageBase64) {
-      phase1Opts.prompt = [
-        { text: currentMessage.content },
-        {
-          media: {
-            contentType: "image/jpeg" as const,
-            url: `data:image/jpeg;base64,${currentMessage.imageBase64}`,
-          },
-        },
-      ] as Parameters<typeof ai.generate>[0] extends { prompt?: infer P } ? P : never;
-    }
-
     let phase1Text: string;
     const phase1Span = tracer.startSpan("phase1.research", {
       attributes: {
         "messages.count": input.messages.length,
-        "has.image": !!currentMessage.imageBase64,
       },
     });
     try {
@@ -274,7 +260,7 @@ export async function chatWithMetrics(
       warnings: response.warnings,
     };
     const metrics = collector.finalize(lastUserMsg, pseudoResponse);
-    saveMetrics(metrics).catch(() => {});
+    saveMetrics(metrics).catch((err) => console.error("[chatWithMetrics] Failed to save metrics:", err));
     return { response, metrics };
   } finally {
     setActiveCollector(null);
@@ -290,13 +276,13 @@ export async function* chatStreamWithMetrics(messages: ChatMessage[]) {
   setActiveCollector(collector);
 
   try {
-    const flowResult = (diagnosticPartnerChat as any).stream({ messages });
+    const { stream, output } = diagnosticPartnerChat.stream({ messages });
 
-    for await (const chunk of flowResult.stream) {
+    for await (const chunk of stream) {
       yield chunk as StreamChunk;
     }
 
-    const response = (await flowResult.output) as ChatAgentResponse;
+    const response = (await output) as ChatAgentResponse;
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const pseudoResponse: AgentResponse = {
       diagnosis: response.diagnosis ?? response.message,
@@ -309,7 +295,7 @@ export async function* chatStreamWithMetrics(messages: ChatMessage[]) {
       warnings: response.warnings,
     };
     const metrics = collector.finalize(lastUserMsg, pseudoResponse);
-    saveMetrics(metrics).catch(() => {});
+    saveMetrics(metrics).catch((err) => console.error("[chatStreamWithMetrics] Failed to save metrics:", err));
 
     yield { type: "complete" as const, response: { ...response, _metrics: metrics } };
   } finally {

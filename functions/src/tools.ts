@@ -3,7 +3,11 @@ import { getFirestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { trace } from "@opentelemetry/api";
 import { ai } from "./ai";
 import { getActiveCollector, type FilterStep, type RAGTraceData } from "./metrics";
+import { cosineSimilarity } from "./utils";
 import type { Part, Supplier, RepairGuide, ServiceManual, SectionEmbedding } from "./types";
+
+// Re-export for external consumers
+export { cosineSimilarity, filterParts } from "./utils";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -91,18 +95,6 @@ const ManualTOCSchema = z.object({
 const TOP_K = 5;
 const SIMILARITY_THRESHOLD = 0.3;
 
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
 async function embedQuery(text: string): Promise<number[]> {
   const result = await ai.embed({
     embedder: "vertexai/text-embedding-004",
@@ -151,20 +143,30 @@ export const searchParts = ai.defineTool(
   async (input) => {
     const startTime = Date.now();
     const db = getFirestore();
-    const snapshot = await db.collection("parts").get();
+
+    // Push exact-match filters to Firestore where possible
+    let query: FirebaseFirestore.Query = db.collection("parts");
+    if (input.category) {
+      query = query.where("category", "==", input.category.toLowerCase());
+    }
+    if (input.manufacturer) {
+      query = query.where("manufacturer", "==", input.manufacturer);
+    }
+
+    const snapshot = await query.get();
     let results: Part[] = snapshot.docs.map(
       (doc: QueryDocumentSnapshot) => doc.data() as Part
     );
 
     const filterSteps: FilterStep[] = [];
 
+    // Server-side filters already applied — record them for tracing
     if (input.category) {
-      const searchTerm = input.category.toLowerCase();
-      results = results.filter((part) => part.category.toLowerCase() === searchTerm);
       filterSteps.push({ filter: "category", value: input.category, remaining: results.length });
     }
 
     if (input.manufacturer) {
+      // Case-insensitive fallback for data that may not match exactly
       const searchTerm = input.manufacturer.toLowerCase();
       results = results.filter((part) => part.manufacturer.toLowerCase() === searchTerm);
       filterSteps.push({ filter: "manufacturer", value: input.manufacturer, remaining: results.length });
@@ -228,11 +230,11 @@ export const getSuppliers = ai.defineTool(
   async (input) => {
     const startTime = Date.now();
     const db = getFirestore();
-    const suppliers: Supplier[] = [];
-    for (const id of input.supplierIds) {
-      const doc = await db.collection("suppliers").doc(id).get();
-      if (doc.exists) suppliers.push(doc.data() as Supplier);
-    }
+    const refs = input.supplierIds.map((id) => db.collection("suppliers").doc(id));
+    const docs = refs.length > 0 ? await db.getAll(...refs) : [];
+    const suppliers: Supplier[] = docs
+      .filter((doc) => doc.exists)
+      .map((doc) => doc.data() as Supplier);
     const latencyMs = Date.now() - startTime;
     trace.getActiveSpan()?.setAttributes({
       "tool.resultCount": suppliers.length,

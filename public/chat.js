@@ -7,23 +7,16 @@
 
   var API_URL = "/api/chat";
 
-  // Conversation state: array of { role, content, imageBase64? }
+  // Conversation state: array of { role, content }
   var messages = [];
 
   // DOM
   var chatMessages = document.getElementById("chat-messages");
   var chatInput = document.getElementById("chat-input");
   var sendBtn = document.getElementById("send-btn");
-  var imageInput = document.getElementById("image-input");
-  var imagePreview = document.getElementById("image-preview");
-  var imagePreviewImg = document.getElementById("image-preview-img");
-  var imageRemoveBtn = document.getElementById("image-remove-btn");
   var debugPanel = document.getElementById("debug-panel");
   var debugLog = document.getElementById("debug-log");
   var debugCopyBtn = document.getElementById("debug-copy-btn");
-
-  // Pending image attachment (base64 string or null)
-  var pendingImage = null;
 
   // ---- Initial greeting ----
 
@@ -60,28 +53,6 @@
     this.style.height = Math.min(this.scrollHeight, 120) + "px";
   });
 
-  // Image attachment
-  imageInput.addEventListener("change", function () {
-    var file = this.files[0];
-    if (!file) return;
-
-    var reader = new FileReader();
-    reader.onload = function (e) {
-      var dataUrl = e.target.result;
-      // Extract base64 portion
-      pendingImage = dataUrl.split(",")[1];
-      imagePreviewImg.src = dataUrl;
-      imagePreview.classList.remove("hidden");
-    };
-    reader.readAsDataURL(file);
-  });
-
-  imageRemoveBtn.addEventListener("click", function () {
-    pendingImage = null;
-    imageInput.value = "";
-    imagePreview.classList.add("hidden");
-  });
-
   if (debugCopyBtn && debugLog) {
     debugCopyBtn.addEventListener("click", function () {
       if (!debugLog.textContent) return;
@@ -108,27 +79,20 @@
 
   function handleSend() {
     var text = chatInput.value.trim();
-    if (!text && !pendingImage) return;
-    if (!text) text = "(see attached photo)";
+    if (!text) return;
 
     // Build user message
     var userMsg = { role: "user", content: text };
-    if (pendingImage) {
-      userMsg.imageBase64 = pendingImage;
-    }
 
     // Add to conversation
     messages.push(userMsg);
 
     // Render user bubble
-    appendBubble("user", text, pendingImage ? imagePreviewImg.src : null);
+    appendBubble("user", text);
 
     // Clear input
     chatInput.value = "";
     chatInput.style.height = "auto";
-    pendingImage = null;
-    imageInput.value = "";
-    imagePreview.classList.add("hidden");
 
     // Show typing indicator
     var typingEl = appendTypingIndicator();
@@ -189,17 +153,9 @@
 
   // ---- Rendering ----
 
-  function appendBubble(role, text, imageSrc) {
+  function appendBubble(role, text) {
     var bubble = document.createElement("div");
     bubble.className = "chat-bubble chat-bubble-" + role;
-
-    if (imageSrc) {
-      var img = document.createElement("img");
-      img.src = imageSrc;
-      img.className = "bubble-image";
-      img.alt = "Attached photo";
-      bubble.appendChild(img);
-    }
 
     var p = document.createElement("div");
     p.className = "bubble-text";

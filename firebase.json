@@ -3,16 +3,16 @@
     "public": "public",
     "rewrites": [
       {
-        "source": "/api/diagnose",
-        "function": "diagnose"
+        "source": "/api/chat",
+        "function": "chat"
+      },
+      {
+        "source": "/api/chatStream",
+        "function": "chatStream"
       },
       {
         "source": "/api/metrics",
         "function": "metrics"
-      },
-      {
-        "source": "/api/chat",
-        "function": "chat"
       }
     ]
   },

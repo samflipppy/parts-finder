@@ -3,17 +3,48 @@ import { onRequest } from "firebase-functions/v2/https";
 import { flushTracing } from "genkit/tracing";
 import { chatWithMetrics, chatStreamWithMetrics } from "./agent";
 import { getRecentMetrics, aggregateMetrics } from "./metrics";
+import { validateChatRequest } from "./validation";
 import type { ChatMessage } from "./types";
+
+// Re-export for backwards compatibility
+export { validateChatRequest } from "./validation";
+export type { ValidationResult } from "./validation";
 
 // Initialize Firebase Admin SDK (once, at cold start)
 initializeApp();
 
+// ---------------------------------------------------------------------------
+// Simple in-memory rate limiter (per Cloud Functions instance)
+// ---------------------------------------------------------------------------
+
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 20; // max requests per IP per window
+
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now >= entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+
+  entry.count++;
+  return entry.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/chat
+// ---------------------------------------------------------------------------
+
 /**
  * POST /api/chat
  *
- * V2 Diagnostic Partner endpoint. Accepts a conversation history
- * (multi-turn messages with optional image attachments) and returns
- * a ChatAgentResponse with manual references, diagnosis, and guidance.
+ * Diagnostic Partner endpoint. Accepts a conversation history
+ * (multi-turn messages) and returns a ChatAgentResponse with
+ * manual references, diagnosis, and guidance.
  */
 export const chat = onRequest(
   { cors: true, timeoutSeconds: 300 },
@@ -23,46 +54,19 @@ export const chat = onRequest(
       return;
     }
 
-    const { messages } = req.body as { messages?: ChatMessage[] };
-
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      res.status(400).json({
-        error:
-          "Missing or invalid 'messages' field. Provide an array of {role, content} message objects.",
-      });
+    const clientIp = req.ip || "unknown";
+    if (isRateLimited(clientIp)) {
+      res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
       return;
     }
 
-    for (const msg of messages) {
-      if (!msg.role || !["user", "assistant"].includes(msg.role)) {
-        res.status(400).json({
-          error: "Each message must have a role of 'user' or 'assistant'.",
-        });
-        return;
-      }
-      if (!msg.content || typeof msg.content !== "string") {
-        res.status(400).json({
-          error: "Each message must have a non-empty 'content' string.",
-        });
-        return;
-      }
-    }
-
-    if (messages[messages.length - 1].role !== "user") {
-      res.status(400).json({
-        error: "The last message must be from the user.",
-      });
+    const validation = validateChatRequest(req.body);
+    if (!validation.valid) {
+      res.status(validation.status!).json({ error: validation.error });
       return;
     }
 
-    const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
-    if (totalChars > 50000) {
-      res.status(400).json({
-        error: "Conversation too long. Maximum 50,000 characters total.",
-      });
-      return;
-    }
-
+    const messages = req.body.messages as ChatMessage[];
     const lastMsg = messages[messages.length - 1].content;
     console.log(
       `[chat] Received ${messages.length} messages, latest: "${lastMsg.substring(0, 100)}..."`
@@ -88,6 +92,10 @@ export const chat = onRequest(
   }
 );
 
+// ---------------------------------------------------------------------------
+// POST /api/chatStream
+// ---------------------------------------------------------------------------
+
 /**
  * POST /api/chatStream
  *
@@ -103,28 +111,19 @@ export const chatStream = onRequest(
       return;
     }
 
-    const { messages } = req.body as { messages?: import("./types").ChatMessage[] };
-
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      res.status(400).json({ error: "Missing or invalid 'messages' field." });
+    const clientIp = req.ip || "unknown";
+    if (isRateLimited(clientIp)) {
+      res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
       return;
     }
 
-    for (const msg of messages) {
-      if (!msg.role || !["user", "assistant"].includes(msg.role)) {
-        res.status(400).json({ error: "Each message must have a role of 'user' or 'assistant'." });
-        return;
-      }
-      if (!msg.content || typeof msg.content !== "string") {
-        res.status(400).json({ error: "Each message must have a non-empty 'content' string." });
-        return;
-      }
-    }
-
-    if (messages[messages.length - 1].role !== "user") {
-      res.status(400).json({ error: "The last message must be from the user." });
+    const validation = validateChatRequest(req.body);
+    if (!validation.valid) {
+      res.status(validation.status!).json({ error: validation.error });
       return;
     }
+
+    const messages = req.body.messages as ChatMessage[];
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -148,6 +147,10 @@ export const chatStream = onRequest(
     }
   }
 );
+
+// ---------------------------------------------------------------------------
+// GET /api/metrics
+// ---------------------------------------------------------------------------
 
 /**
  * GET /api/metrics
