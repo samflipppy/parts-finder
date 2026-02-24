@@ -9,12 +9,11 @@ import {
 } from "../metrics";
 
 function buildConversation(
-  ...turns: Array<{ role: "user" | "assistant"; content: string; imageBase64?: string }>
+  ...turns: Array<{ role: "user" | "assistant"; content: string }>
 ): ChatMessage[] {
   return turns.map((t) => ({
     role: t.role,
     content: t.content,
-    ...(t.imageBase64 ? { imageBase64: t.imageBase64 } : {}),
   }));
 }
 
@@ -405,13 +404,4 @@ describe("Workflow edge cases", () => {
     expect(current.content).toBe("How do I disconnect J12?");
   });
 
-  it("image attachment flows through the message correctly", () => {
-    const messages = buildConversation(
-      { role: "user", content: "Check this bearing", imageBase64: "iVBORw0KGgoAAAANS..." }
-    );
-
-    expect(messages[0].imageBase64).toBe("iVBORw0KGgoAAAANS...");
-    expect(messages[0].content).toBe("Check this bearing");
-    expect(messages[0].role).toBe("user");
-  });
 });

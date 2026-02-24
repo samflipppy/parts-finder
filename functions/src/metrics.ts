@@ -169,15 +169,15 @@ export class MetricsCollector {
 // Firestore persistence
 // ---------------------------------------------------------------------------
 
-/** Persist a metrics snapshot to the diagnostics collection. */
+/** Persist a metrics snapshot to the metrics collection. */
 export async function saveMetrics(metrics: RequestMetrics): Promise<void> {
   try {
     const db = getFirestore();
     // JSON round-trip strips undefined values — Firestore rejects them
     // (e.g. optional filterSteps/ragTrace fields on tool calls that don't use them)
     const data = JSON.parse(JSON.stringify(metrics));
-    await db.collection("diagnostics").doc(metrics.requestId).set(data);
-    console.log(`[metrics] Saved to diagnostics/${metrics.requestId}`);
+    await db.collection("metrics").doc(metrics.requestId).set(data);
+    console.log(`[metrics] Saved to metrics/${metrics.requestId}`);
   } catch (err) {
     // Non-blocking — metrics should never break the main request
     console.error("[metrics] Failed to persist:", err);
@@ -190,7 +190,7 @@ export async function getRecentMetrics(
 ): Promise<RequestMetrics[]> {
   const db = getFirestore();
   const snapshot = await db
-    .collection("diagnostics")
+    .collection("metrics")
     .orderBy("timestamp", "desc")
     .limit(limit)
     .get();

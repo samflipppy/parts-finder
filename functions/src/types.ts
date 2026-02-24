@@ -100,7 +100,6 @@ export interface SectionEmbedding {
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  imageBase64?: string;
 }
 
 // ---------------------------------------------------------------------------
