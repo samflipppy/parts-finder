@@ -92,23 +92,24 @@ export const ChatAgentResponseSchema = z.object({
 const StreamChunkSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("tool_done"), toolName: z.string(), resultCount: z.number(), latencyMs: z.number() }),
   z.object({ type: z.literal("text_chunk"), text: z.string() }),
+  z.object({ type: z.literal("phase_structuring") }),
 ]);
 
 // ---------------------------------------------------------------------------
-// Zero-tool-call detection
+// Zero-tool-call detection (for Phase 1 text output)
 // ---------------------------------------------------------------------------
 
 /**
- * Returns true if the model tried to answer without calling any tools.
- * Clarifications (asking the user for more info) are fine with 0 tools.
- * Anything else — diagnosis, guidance, photo_analysis — needs tool data.
+ * Returns true if the model produced a text response without calling any
+ * tools and the text doesn't look like a clarification question.
  */
 function shouldRetryWithoutTools(
-  result: ChatAgentResponse,
+  researchText: string,
   toolCount: number
 ): boolean {
   if (toolCount > 0) return false;
-  if (result.type === "clarification") return false;
+  // Text ending with a question → model is asking for more info, that's fine
+  if (/\?\s*$/.test(researchText.trim())) return false;
   return true;
 }
 
@@ -130,11 +131,35 @@ const EMPTY_BUSINESS_FIELDS = {
 };
 
 // ---------------------------------------------------------------------------
-// diagnosticPartnerChat — single-phase flow
+// Phase 2 structuring prompt
 //
-// One generateStream call with tools + structured output.
-// The model calls tools, then returns structured JSON.
-// Tool progress streams via sendChunk (from MetricsCollector).
+// After Phase 1 (research with tools), Phase 2 formats the results into
+// the required JSON schema. The key instruction: use ONLY data from tool
+// results, never invent values.
+// ---------------------------------------------------------------------------
+
+const STRUCTURING_PROMPT = `Now produce the structured JSON response based on your research above.
+
+CRITICAL — use ONLY data that your tools returned:
+- recommendedPart: copy the EXACT name, partNumber, avgPrice, and criticality from searchParts results. NEVER invent or guess part numbers.
+- manualReferences: use the EXACT manualId, sectionId, sectionTitle, and quote text from searchManual or getManualSection results.
+- equipmentAsset: use the EXACT values from lookupAsset results.
+- repairGuide: use the EXACT steps, tools, and safety warnings from getRepairGuide results.
+- supplierRanking: use the EXACT supplier names and scores from getSuppliers results.
+- If a tool returned no data for a field, set it to null or []. NEVER fabricate values.`;
+
+// ---------------------------------------------------------------------------
+// diagnosticPartnerChat — two-phase flow
+//
+// Phase 1 (Research): generateStream with tools, NO structured output.
+//   Removing the output schema prevents Gemini from taking the shortcut
+//   of filling JSON from its training data instead of calling tools.
+//   Tool progress streams to the UI via MetricsCollector.
+//
+// Phase 2 (Structure): generate with output schema, NO tools.
+//   Takes the full conversation (including tool call results) and formats
+//   it into the required JSON. The model can't hallucinate because the
+//   real data is right there in context.
 // ---------------------------------------------------------------------------
 
 export const diagnosticPartnerChat = ai.defineFlow(
@@ -175,15 +200,17 @@ export const diagnosticPartnerChat = ai.defineFlow(
       try {
         // On retry after zero-tool-call, append an instruction forcing tool usage
         const effectivePrompt = forceToolPrompt
-          ? `${currentMessage.content}\n\n[SYSTEM: You MUST call your tools (lookupAsset, searchManual, searchParts, etc.) to research this equipment BEFORE responding. Do NOT respond without calling tools first. Call at least searchManual and searchParts.]`
+          ? `${currentMessage.content}\n\n[SYSTEM: You MUST call your tools (lookupAsset, searchManual, searchParts, etc.) to research this equipment BEFORE responding. Do NOT respond without calling tools first.]`
           : currentMessage.content;
 
-        const { response: responsePromise, stream } = ai.generateStream({
+        // ── Phase 1: Research — tools enabled, NO structured output ──
+        // Without output: { schema }, the model cannot shortcut to JSON.
+        // It must actually call tools to be useful.
+        const { response: researchPromise, stream } = ai.generateStream({
           system: SYSTEM_PROMPT,
           messages: genkitHistory,
           prompt: effectivePrompt,
           tools: ALL_TOOLS,
-          output: { schema: ChatAgentResponseSchema },
           maxTurns: 15,
         });
 
@@ -194,18 +221,38 @@ export const diagnosticPartnerChat = ai.defineFlow(
           }
         }
 
-        const response = await responsePromise;
-        const result = response.output;
+        const researchResponse = await researchPromise;
+        const researchText = researchResponse.text;
+
+        // Guard: if model skipped tools and didn't ask a clarification, retry
+        const toolCount = getActiveCollector()?.getToolCallCount() ?? 0;
+        if (!forceToolPrompt && attempt < MAX_RETRIES && shouldRetryWithoutTools(researchText, toolCount)) {
+          console.warn(`[agent] Phase 1 returned 0 tool calls with non-question text (attempt ${attempt}/${MAX_RETRIES}). Retrying...`);
+          forceToolPrompt = true;
+          continue;
+        }
+
+        // ── Phase 2: Structure — format tool results into JSON ──
+        // Pass the full conversation (with tool call data) so the model
+        // can copy exact values instead of hallucinating.
+        sendChunk({ type: "phase_structuring" } as StreamChunk);
+
+        const structuredResponse = await ai.generate({
+          messages: researchResponse.messages,
+          prompt: STRUCTURING_PROMPT,
+          output: { schema: ChatAgentResponseSchema },
+        });
+
+        const result = structuredResponse.output;
 
         if (!result) {
           // Model didn't produce valid structured output — fall back to raw text
-          const rawText = response.text;
-          console.warn(`[agent] Structured output was null, falling back to raw text (${rawText.length} chars)`);
+          console.warn(`[agent] Phase 2 structured output was null, falling back to research text (${researchText.length} chars)`);
           span.setStatus({ code: SpanStatusCode.OK });
           setActiveChunkEmitter(null);
           return {
             type: "guidance",
-            message: rawText || "I wasn't able to structure my response. Please try again.",
+            message: researchText || "I wasn't able to structure my response. Please try again.",
             manualReferences: [],
             diagnosis: null,
             recommendedPart: null,
@@ -213,18 +260,10 @@ export const diagnosticPartnerChat = ai.defineFlow(
             supplierRanking: [],
             alternativeParts: [],
             confidence: "medium",
-            reasoning: "Structured output was null; returning raw text.",
+            reasoning: "Structured output was null; returning raw research text.",
             warnings: [],
             ...EMPTY_BUSINESS_FIELDS,
           };
-        }
-
-        // Guard: if the model tried to answer without calling any tools, retry
-        const toolCount = getActiveCollector()?.getToolCallCount() ?? 0;
-        if (!forceToolPrompt && attempt < MAX_RETRIES && shouldRetryWithoutTools(result, toolCount)) {
-          console.warn(`[agent] Model returned type="${result.type}" with 0 tool calls (attempt ${attempt}/${MAX_RETRIES}). Retrying with forced tool prompt...`);
-          forceToolPrompt = true;
-          continue;
         }
 
         span.setAttributes({
