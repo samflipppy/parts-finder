@@ -87,6 +87,7 @@ interface ToolCall {
 }
 
 interface Metrics {
+  requestId?: string;
   toolCalls: ToolCall[];
   totalToolCalls: number;
   totalLatencyMs: number;
@@ -172,6 +173,8 @@ const TOOL_LABELS: Record<ToolName, string> = {
 // ---------------------------------------------------------------------------
 
 const messages: ChatMessage[] = [];
+let lastRequestId: string | null = null;
+let feedbackSubmitted = false;
 
 // ---------------------------------------------------------------------------
 // DOM refs (cast once at startup)
@@ -457,6 +460,7 @@ function handleSend(): void {
               }
               case "complete":
                 streamBubble.remove();
+                lastRequestId = event.response._metrics?.requestId ?? null;
                 renderAssistantResponse(event.response);
                 break;
               case "error":
@@ -636,8 +640,116 @@ function renderAssistantResponse(data: ChatAgentResponse): void {
     }
   }
 
+  // "Rate this conversation" button
+  if (!feedbackSubmitted) {
+    const rateBtn = document.createElement("button");
+    rateBtn.className = "buy-btn";
+    rateBtn.textContent = "Rate this conversation";
+    rateBtn.addEventListener("click", () => showFeedbackToast());
+    bubble.appendChild(rateBtn);
+  }
+
   chatMessages.appendChild(bubble);
   scrollToBottom();
+}
+
+// ---------------------------------------------------------------------------
+// Feedback toast (star rating)
+// ---------------------------------------------------------------------------
+
+function showFeedbackToast(): void {
+  if (document.getElementById("feedback-toast")) return;
+
+  const toast = document.createElement("div");
+  toast.id = "feedback-toast";
+  toast.className = "buy-toast";
+
+  toast.innerHTML =
+    `<div class="buy-toast-inner">` +
+      `<div class="buy-toast-title">Rate this conversation</div>` +
+      `<p class="buy-toast-body">Your feedback goes to our <strong>model evaluation metrics</strong> and helps us improve.</p>` +
+      `<div class="feedback-stars" id="feedback-stars">` +
+        `${[1, 2, 3, 4, 5].map((n) => `<button class="feedback-star" data-rating="${n}" type="button" aria-label="${n} star${n > 1 ? "s" : ""}">&#9733;</button>`).join("")}` +
+      `</div>` +
+      `<p id="feedback-status" class="feedback-status"></p>` +
+      `<button class="buy-toast-close" id="feedback-close" type="button">Close</button>` +
+    `</div>`;
+
+  document.body.appendChild(toast);
+
+  // Animate in
+  requestAnimationFrame(() => toast.classList.add("buy-toast-visible"));
+
+  // Star hover + click
+  const starsContainer = document.getElementById("feedback-stars")!;
+  const allStars = starsContainer.querySelectorAll<HTMLButtonElement>(".feedback-star");
+  const statusEl = document.getElementById("feedback-status")!;
+
+  let selectedRating = 0;
+
+  function highlightStars(upTo: number): void {
+    allStars.forEach((s, i) => {
+      s.classList.toggle("feedback-star-active", i < upTo);
+    });
+  }
+
+  allStars.forEach((star) => {
+    star.addEventListener("mouseenter", () => {
+      highlightStars(parseInt(star.dataset.rating!, 10));
+    });
+
+    star.addEventListener("mouseleave", () => {
+      highlightStars(selectedRating);
+    });
+
+    star.addEventListener("click", () => {
+      selectedRating = parseInt(star.dataset.rating!, 10);
+      highlightStars(selectedRating);
+      submitFeedback(selectedRating, statusEl, toast);
+    });
+  });
+
+  document.getElementById("feedback-close")!.addEventListener("click", () => {
+    toast.classList.remove("buy-toast-visible");
+    setTimeout(() => toast.remove(), 300);
+  });
+}
+
+function submitFeedback(rating: number, statusEl: HTMLElement, toast: HTMLElement): void {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const pw = getStoredPassword();
+  if (pw) headers["x-demo-password"] = pw;
+
+  fetch("/api/feedback", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      rating,
+      messageCount: messages.length,
+      lastRequestId,
+    }),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error("Request failed");
+      return res.json();
+    })
+    .then(() => {
+      feedbackSubmitted = true;
+      statusEl.textContent = `Thanks for the ${rating}-star rating! This goes to our model evaluation metrics.`;
+      statusEl.className = "feedback-status feedback-status-success";
+
+      // Remove all rate buttons from existing bubbles
+      document.querySelectorAll<HTMLButtonElement>(".buy-btn").forEach((btn) => btn.remove());
+
+      setTimeout(() => {
+        toast.classList.remove("buy-toast-visible");
+        setTimeout(() => toast.remove(), 300);
+      }, 2000);
+    })
+    .catch(() => {
+      statusEl.textContent = "Failed to submit. Try again.";
+      statusEl.className = "feedback-status feedback-status-error";
+    });
 }
 
 // ---------------------------------------------------------------------------

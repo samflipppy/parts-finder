@@ -2,6 +2,7 @@ import { initializeApp } from "firebase-admin/app";
 import { onRequest } from "firebase-functions/v2/https";
 import { defineString } from "firebase-functions/params";
 import { flushTracing } from "genkit/tracing";
+import { getFirestore } from "firebase-admin/firestore";
 import { chatStreamWithMetrics } from "./agent";
 import { getRecentMetrics, aggregateMetrics } from "./metrics";
 import { validateChatRequest } from "./validation";
@@ -153,6 +154,67 @@ export const metrics = onRequest(
       });
     } finally {
       await flushTracing();
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/feedback  — per-conversation star rating
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/feedback
+ *
+ * Accepts { rating: 1-5, messageCount: number, lastRequestId?: string }
+ * Persists to Firestore and emits a structured log for Cloud Monitoring.
+ */
+export const feedback = onRequest(
+  { cors: true, timeoutSeconds: 30 },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).json({ error: "Method not allowed. Use POST." });
+      return;
+    }
+
+    if (!checkDemoAuth(req, res)) return;
+
+    const { rating, messageCount, lastRequestId } = req.body ?? {};
+
+    if (typeof rating !== "number" || rating < 1 || rating > 5 || !Number.isInteger(rating)) {
+      res.status(400).json({ error: "rating must be an integer 1-5." });
+      return;
+    }
+
+    const doc = {
+      rating,
+      messageCount: typeof messageCount === "number" ? messageCount : 0,
+      lastRequestId: typeof lastRequestId === "string" ? lastRequestId : null,
+      timestamp: new Date().toISOString(),
+      ip: req.ip || "unknown",
+    };
+
+    try {
+      const db = getFirestore();
+      const ref = await db.collection("feedback").add(doc);
+
+      // Structured log — Cloud Monitoring can create log-based metrics from this
+      console.log(JSON.stringify({
+        severity: "INFO",
+        message: "user_feedback",
+        "logging.googleapis.com/labels": { type: "agent_feedback" },
+        feedback: {
+          rating: doc.rating,
+          messageCount: doc.messageCount,
+          lastRequestId: doc.lastRequestId,
+          feedbackId: ref.id,
+        },
+      }));
+
+      res.status(200).json({ ok: true, feedbackId: ref.id });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.error("[feedback] Error:", message);
+      res.status(500).json({ error: "Failed to save feedback." });
     }
   }
 );
