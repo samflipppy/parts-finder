@@ -316,16 +316,20 @@ export const diagnosticPartnerChat = ai.defineFlow(
       const result = formatted.output;
 
       if (!result) {
-        const partsArr = toolData.parts as Array<{ name: string; partNumber: string; avgPrice: number }>;
-        const fallbackMsg = partsArr.length > 0
-          ? `I found a potential match: ${partsArr[0].name} (${partsArr[0].partNumber}) at $${partsArr[0].avgPrice.toLocaleString()}. Please verify this matches your equipment.`
+        const partsArr = toolData.parts as Array<{ name: string; partNumber: string; description: string; avgPrice: number; criticality: string }>;
+        const topPart = partsArr.length > 0 ? partsArr[0] : null;
+        const fallbackMsg = topPart
+          ? `I found a potential match: ${topPart.name} (${topPart.partNumber}) at $${topPart.avgPrice.toLocaleString()}. Please verify this matches your equipment.`
           : "I searched our database but couldn't find a matching part for that equipment. Could you double-check the manufacturer and model?";
 
         return {
-          type: partsArr.length > 0 ? "diagnosis" : "guidance",
+          type: topPart ? "diagnosis" : "guidance",
           message: fallbackMsg,
           ...EMPTY_RESPONSE_FIELDS,
-          confidence: partsArr.length > 0 ? "medium" : null,
+          recommendedPart: topPart
+            ? { name: topPart.name, partNumber: topPart.partNumber, description: topPart.description, avgPrice: topPart.avgPrice, criticality: topPart.criticality }
+            : null,
+          confidence: topPart ? "medium" : null,
           reasoning: "Formatting LLM returned null; built fallback from raw tool data.",
         };
       }
