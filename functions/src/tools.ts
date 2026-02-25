@@ -744,15 +744,6 @@ export const getRepairHistory = ai.defineTool(
       query = query.where("assetId", "==", input.assetId);
     }
 
-    // Push sorting to Firestore
-    query = query.orderBy("createdAt", "desc");
-
-    // Only push limit to Firestore when no client-side filters will run after
-    const needsClientFilter = !!(input.equipmentName || input.manufacturer);
-    if (!needsClientFilter) {
-      query = query.limit(10);
-    }
-
     const snapshot = await query.get();
     let results: WorkOrder[] = snapshot.docs.map(
       (doc: QueryDocumentSnapshot) => doc.data() as WorkOrder
@@ -768,10 +759,14 @@ export const getRepairHistory = ai.defineTool(
       results = results.filter((wo) => wo.manufacturer.toLowerCase().includes(term));
     }
 
-    // Limit to 10 most recent (already sorted server-side)
-    if (needsClientFilter) {
-      results = results.slice(0, 10);
-    }
+    // Sort client-side to avoid requiring a composite Firestore index
+    results.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    results = results.slice(0, 10);
 
     const latencyMs = Date.now() - startTime;
     console.log(`[getRepairHistory] ${results.length} work orders (${latencyMs}ms)`);

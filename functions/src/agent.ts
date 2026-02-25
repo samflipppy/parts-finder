@@ -280,7 +280,11 @@ export const diagnosticPartnerChat = ai.defineFlow(
       let repairHistory: unknown[] = [];
       if (Array.isArray(assets) && assets.length > 0) {
         const topAsset = assets[0] as { assetId: string };
-        repairHistory = await getRepairHistory({ assetId: topAsset.assetId });
+        try {
+          repairHistory = await getRepairHistory({ assetId: topAsset.assetId });
+        } catch (err) {
+          console.warn("[agent] getRepairHistory failed, continuing without it:", err instanceof Error ? err.message : err);
+        }
       }
 
       // ── Step 8: Format response — LLM only formats, never invents ──
