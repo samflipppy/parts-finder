@@ -259,7 +259,7 @@ export const getRepairGuide = ai.defineTool(
     inputSchema: z.object({
       partId: z.string().describe("The part document ID, e.g. 'part_001'"),
     }),
-    outputSchema: RepairGuideSchema.nullable(),
+    outputSchema: z.union([RepairGuideSchema, z.object({ notFound: z.literal(true), message: z.string() })]),
   },
   async (input) => {
     const startTime = Date.now();
@@ -271,7 +271,7 @@ export const getRepairGuide = ai.defineTool(
 
     if (!doc.exists) {
       getActiveCollector()?.recordToolCall("getRepairGuide", input as Record<string, unknown>, 0, latencyMs);
-      return null;
+      return { notFound: true as const, message: `No repair guide found for part ${input.partId}` };
     }
 
     const guide = doc.data() as RepairGuide;
@@ -495,7 +495,7 @@ export const listManualSections = ai.defineTool(
         .string()
         .describe("Equipment model name, e.g. Evita V500, IntelliVue MX800"),
     }),
-    outputSchema: ManualTOCSchema.nullable(),
+    outputSchema: z.union([ManualTOCSchema, z.object({ notFound: z.literal(true), message: z.string() })]),
   },
   async (input) => {
     const startTime = Date.now();
@@ -519,7 +519,7 @@ export const listManualSections = ai.defineTool(
 
     if (!manual) {
       getActiveCollector()?.recordToolCall("listManualSections", input as Record<string, unknown>, 0, latencyMs);
-      return null;
+      return { notFound: true as const, message: `No service manual found for ${input.manufacturer} ${input.equipmentName}` };
     }
 
     const toc = {
@@ -562,7 +562,7 @@ export const getManualSection = ai.defineTool(
         .string()
         .describe("The section ID within the manual, e.g. 'ev500_3_7'"),
     }),
-    outputSchema: ManualSectionResultSchema.nullable(),
+    outputSchema: z.union([ManualSectionResultSchema, z.object({ notFound: z.literal(true), message: z.string() })]),
   },
   async (input) => {
     const startTime = Date.now();
@@ -574,7 +574,7 @@ export const getManualSection = ai.defineTool(
 
     if (!doc.exists) {
       getActiveCollector()?.recordToolCall("getManualSection", input as Record<string, unknown>, 0, latencyMs);
-      return null;
+      return { notFound: true as const, message: `Manual ${input.manualId} not found` };
     }
 
     const manual = doc.data() as ServiceManual;
@@ -582,7 +582,7 @@ export const getManualSection = ai.defineTool(
 
     if (!section) {
       getActiveCollector()?.recordToolCall("getManualSection", input as Record<string, unknown>, 0, latencyMs);
-      return null;
+      return { notFound: true as const, message: `Section ${input.sectionId} not found in manual ${input.manualId}` };
     }
 
     console.log(`[getManualSection] "${section.title}" (${latencyMs}ms)`);
