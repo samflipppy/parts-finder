@@ -3,7 +3,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import { defineString } from "firebase-functions/params";
 import { flushTracing } from "genkit/tracing";
 import { getFirestore } from "firebase-admin/firestore";
-import { chatStreamWithMetrics } from "./agent";
+import { chatWithMetrics } from "./agent";
 import { getRecentMetrics, aggregateMetrics } from "./metrics";
 import { validateChatRequest } from "./validation";
 import type { ChatMessage } from "./types";
@@ -99,9 +99,8 @@ export const chat = onRequest(
     const write = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
     try {
-      for await (const event of chatStreamWithMetrics(messages)) {
-        write(event);
-      }
+      const response = await chatWithMetrics(messages);
+      write({ type: "complete", response });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       console.error("[chat] Error:", message);
