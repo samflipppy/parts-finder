@@ -5,3 +5,4 @@ functions/.env
 .env
 *.log
 .firebase/
+public/chat.js

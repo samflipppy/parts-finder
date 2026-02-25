@@ -1,0 +1,15 @@
+{
+  "name": "parts-finder",
+  "private": true,
+  "scripts": {
+    "build:ui": "esbuild public/src/chat.ts --bundle --outfile=public/chat.js --format=iife --target=es2020 --minify",
+    "build:ui:watch": "esbuild public/src/chat.ts --bundle --outfile=public/chat.js --format=iife --target=es2020 --watch",
+    "typecheck:ui": "tsc -p public/tsconfig.json --noEmit",
+    "build": "npm run build:ui && cd functions && npm run build",
+    "test": "cd functions && npm test"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.4.0"
+  }
+}
