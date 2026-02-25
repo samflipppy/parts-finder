@@ -2,12 +2,9 @@ import { z } from "genkit";
 import { SpanStatusCode } from "@opentelemetry/api";
 import type { AgentResponse, ChatMessage, ChatAgentResponse } from "./types";
 import { ai, tracer } from "./ai";
-import { SYSTEM_PROMPT } from "./prompts";
 import {
-  listManualSections,
-  searchManual,
-  getManualSection,
   searchParts,
+  searchManual,
   getSuppliers,
   getRepairGuide,
   lookupAsset,
@@ -15,11 +12,8 @@ import {
 } from "./tools";
 import {
   MetricsCollector,
-  getActiveCollector,
   setActiveCollector,
-  setActiveChunkEmitter,
   saveMetrics,
-  type StreamChunk,
 } from "./metrics";
 
 // ---------------------------------------------------------------------------
@@ -89,52 +83,74 @@ export const ChatAgentResponseSchema = z.object({
     .nullable(),
 });
 
-const StreamChunkSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("tool_done"), toolName: z.string(), resultCount: z.number(), latencyMs: z.number() }),
-  z.object({ type: z.literal("text_chunk"), text: z.string() }),
-]);
-
 // ---------------------------------------------------------------------------
-// Zero-tool-call detection
+// Parameter extraction — LLM parses natural language into structured params
 // ---------------------------------------------------------------------------
 
-/**
- * Returns true if the model tried to answer without calling any tools.
- * Clarifications (asking the user for more info) are fine with 0 tools.
- * Anything else — diagnosis, guidance, photo_analysis — needs tool data.
- */
-function shouldRetryWithoutTools(
-  result: ChatAgentResponse,
-  toolCount: number
-): boolean {
-  if (toolCount > 0) return false;
-  if (result.type === "clarification") return false;
-  return true;
-}
+const ExtractionSchema = z.object({
+  manufacturer: z.string().nullable().describe("Equipment manufacturer, e.g. Drager, Philips, GE, Zoll. null if unknown"),
+  equipmentName: z.string().nullable().describe("Equipment model name, e.g. Evita V500, IntelliVue MX800. null if unknown"),
+  errorCode: z.string().nullable().describe("Error code mentioned, e.g. Error 57. null if none"),
+  symptom: z.string().nullable().describe("Symptom description, e.g. fan not spinning. null if none"),
+  assetTag: z.string().nullable().describe("Asset tag or unit number, e.g. ASSET-4302, unit 4302. null if none"),
+  department: z.string().nullable().describe("Hospital department, e.g. ICU-3, OR-7. null if none"),
+  needsClarification: z.boolean().describe("true if the technician hasn't given enough info to search (no manufacturer, no model, no error code, no symptom)"),
+  clarificationMessage: z.string().nullable().describe("A helpful question to ask the technician, or null"),
+  isNonMedical: z.boolean().describe("true if asking about non-hospital equipment (coffee maker, printer, etc.)"),
+});
 
-// All tools available to the agent
-const ALL_TOOLS = [
-  listManualSections,
-  searchManual,
-  getManualSection,
-  searchParts,
-  getSuppliers,
-  getRepairGuide,
-  lookupAsset,
-  getRepairHistory,
-];
+const EXTRACTION_PROMPT = `You extract structured equipment information from hospital biomedical technician messages.
 
-// Default empty business fields for error/fallback responses
-const EMPTY_BUSINESS_FIELDS = {
+Extract: manufacturer, equipment model name, error codes, symptoms, asset tags, and department.
+
+Rules:
+- If the technician gives a manufacturer + model OR a specific error code OR a specific symptom, set needsClarification to false — that's enough to search.
+- Only set needsClarification to true if the message is too vague to search at all (e.g. "my equipment is broken" with no details).
+- If asking about non-medical equipment (coffee makers, printers, microwaves, etc.), set isNonMedical to true.
+- For asset tags: "unit 4302" → assetTag: "ASSET-4302". "serial SN-V500-2847" → leave as assetTag.`;
+
+type ExtractionResult = z.infer<typeof ExtractionSchema>;
+
+// ---------------------------------------------------------------------------
+// Response formatting — LLM formats tool results into structured response
+// ---------------------------------------------------------------------------
+
+const FORMATTING_PROMPT = `You are formatting database lookup results into a structured response for a hospital biomedical equipment technician.
+
+CRITICAL RULES:
+- Use ONLY the exact data from the tool results below. NEVER invent part numbers, prices, manual references, or any other values.
+- For recommendedPart: copy the EXACT name, partNumber, avgPrice, criticality from the parts results.
+- For manualReferences: use EXACT manualId, sectionId, sectionTitle from the manual results.
+- For equipmentAsset: use EXACT data from the asset results.
+- For repairGuide: use EXACT steps, tools, warnings from the repair guide results.
+- For supplierRanking: use EXACT supplier names and scores from the supplier results.
+- If no data exists for a field, use null or []. NEVER fabricate values.
+- If parts results are empty, set type to "guidance" and explain that no matching parts were found in the database.
+- Write a natural 2-5 sentence message summarizing your findings for the technician.`;
+
+// Default empty fields for clarification/error responses
+const EMPTY_RESPONSE_FIELDS = {
+  manualReferences: [] as never[],
+  diagnosis: null,
+  recommendedPart: null,
+  repairGuide: null,
+  supplierRanking: [] as never[],
+  alternativeParts: [] as never[],
+  confidence: null as null,
+  reasoning: null as null,
+  warnings: [] as string[],
   equipmentAsset: null,
 };
 
 // ---------------------------------------------------------------------------
-// diagnosticPartnerChat — single-phase flow
+// diagnosticPartnerChat — deterministic orchestrator
 //
-// One generateStream call with tools + structured output.
-// The model calls tools, then returns structured JSON.
-// Tool progress streams via sendChunk (from MetricsCollector).
+// Instead of giving the LLM tools and hoping it calls them, we:
+//   1. Use the LLM to extract structured params from natural language
+//   2. Call tools programmatically — always, deterministically
+//   3. Use the LLM to format the tool results into a response
+//
+// No retries. No streaming. No tool-skipping. No hallucinated part numbers.
 // ---------------------------------------------------------------------------
 
 export const diagnosticPartnerChat = ai.defineFlow(
@@ -149,10 +165,8 @@ export const diagnosticPartnerChat = ai.defineFlow(
       ),
     }),
     outputSchema: ChatAgentResponseSchema,
-    streamSchema: StreamChunkSchema,
   },
-  async (input, { sendChunk }): Promise<ChatAgentResponse> => {
-    setActiveChunkEmitter(sendChunk as (chunk: StreamChunk) => void);
+  async (input): Promise<ChatAgentResponse> => {
     console.log(`[agent] Processing ${input.messages.length} messages`);
 
     const history = input.messages.slice(0, -1);
@@ -167,131 +181,166 @@ export const diagnosticPartnerChat = ai.defineFlow(
       attributes: { "messages.count": input.messages.length },
     });
 
-    const MAX_RETRIES = 3;
-    let forceToolPrompt = false;
-
     try {
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        // On retry after zero-tool-call, append an instruction forcing tool usage
-        const effectivePrompt = forceToolPrompt
-          ? `${currentMessage.content}\n\n[SYSTEM: You MUST call your tools (lookupAsset, searchManual, searchParts, etc.) to research this equipment BEFORE responding. Do NOT respond without calling tools first. Call at least searchManual and searchParts.]`
-          : currentMessage.content;
+      // ── Step 1: Extract structured params from the user message ──
+      const extraction = await ai.generate({
+        system: EXTRACTION_PROMPT,
+        messages: genkitHistory,
+        prompt: currentMessage.content,
+        output: { schema: ExtractionSchema },
+      });
 
-        const { response: responsePromise, stream } = ai.generateStream({
-          system: SYSTEM_PROMPT,
-          messages: genkitHistory,
-          prompt: effectivePrompt,
-          tools: ALL_TOOLS,
-          output: { schema: ChatAgentResponseSchema },
-          maxTurns: 15,
-        });
+      const params: ExtractionResult | null = extraction.output;
 
-        // Stream text chunks as they arrive (tool-calling turns produce planning text)
-        for await (const chunk of stream) {
-          if (chunk.text) {
-            sendChunk({ type: "text_chunk", text: chunk.text });
-          }
-        }
-
-        const response = await responsePromise;
-        const result = response.output;
-
-        if (!result) {
-          // Model didn't produce valid structured output — fall back to raw text
-          const rawText = response.text;
-          console.warn(`[agent] Structured output was null, falling back to raw text (${rawText.length} chars)`);
-          span.setStatus({ code: SpanStatusCode.OK });
-          setActiveChunkEmitter(null);
-          return {
-            type: "guidance",
-            message: rawText || "I wasn't able to structure my response. Please try again.",
-            manualReferences: [],
-            diagnosis: null,
-            recommendedPart: null,
-            repairGuide: null,
-            supplierRanking: [],
-            alternativeParts: [],
-            confidence: "medium",
-            reasoning: "Structured output was null; returning raw text.",
-            warnings: [],
-            ...EMPTY_BUSINESS_FIELDS,
-          };
-        }
-
-        // Guard: if the model tried to answer without calling any tools, retry
-        const toolCount = getActiveCollector()?.getToolCallCount() ?? 0;
-        if (!forceToolPrompt && attempt < MAX_RETRIES && shouldRetryWithoutTools(result, toolCount)) {
-          console.warn(`[agent] Model returned type="${result.type}" with 0 tool calls (attempt ${attempt}/${MAX_RETRIES}). Retrying with forced tool prompt...`);
-          forceToolPrompt = true;
-          continue;
-        }
-
-        span.setAttributes({
-          "response.type": result.type,
-          "part.found": !!(result.recommendedPart),
-          "confidence": result.confidence ?? "null",
-        });
-        span.setStatus({ code: SpanStatusCode.OK });
-        console.log(
-          `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}, tools: ${toolCount}`
-        );
-
-        setActiveChunkEmitter(null);
-        return result;
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const isSchemaNull = msg.includes("Schema validation failed") && msg.includes("null");
-        const isToolNull = msg.includes("missing tool response data");
-        const isRateLimit = msg.includes("429") || msg.toLowerCase().includes("resource exhausted");
-
-        // Retry on transient Gemini failures (null structured output, null tool responses)
-        if ((isSchemaNull || isToolNull) && attempt < MAX_RETRIES) {
-          console.warn(`[agent] Transient Gemini error on attempt ${attempt}/${MAX_RETRIES}, retrying...`);
-          continue;
-        }
-
-        span.recordException(new Error(msg));
-        span.setStatus({ code: SpanStatusCode.ERROR, message: msg });
-        console.error("[agent] Failed:", msg);
-
-        setActiveChunkEmitter(null);
-
+      if (!params) {
         return {
           type: "clarification",
-          message: isRateLimit
-            ? "The AI service is temporarily rate-limited. Please wait a moment and try again."
-            : "I wasn't able to process that. Could you rephrase your question? Include the equipment manufacturer and model if possible.",
-          manualReferences: [],
-          diagnosis: null,
-          recommendedPart: null,
-          repairGuide: null,
-          supplierRanking: [],
-          alternativeParts: [],
-          confidence: null,
-          reasoning: `Generation failed: ${msg}`,
-          warnings: [],
-          ...EMPTY_BUSINESS_FIELDS,
+          message: "I can help with that. What manufacturer and model of equipment are you working with?",
+          ...EMPTY_RESPONSE_FIELDS,
+          reasoning: "Extraction returned null.",
         };
       }
-    }
 
-    // Exhausted retries — should not normally reach here
-    setActiveChunkEmitter(null);
-    return {
-      type: "clarification",
-      message: "I wasn't able to process that. Could you rephrase your question?",
-      manualReferences: [],
-      diagnosis: null,
-      recommendedPart: null,
-      repairGuide: null,
-      supplierRanking: [],
-      alternativeParts: [],
-      confidence: null,
-      reasoning: "Exhausted retries due to transient Gemini errors.",
-      warnings: [],
-      ...EMPTY_BUSINESS_FIELDS,
-    };
+      // ── Step 2: Handle clarification / non-medical ──
+      if (params.isNonMedical) {
+        span.setAttributes({ "response.type": "guidance", "non_medical": true });
+        span.setStatus({ code: SpanStatusCode.OK });
+        return {
+          type: "guidance",
+          message: "I specialize in hospital biomedical equipment — ventilators, patient monitors, defibrillators, infusion pumps, and similar devices. I don't have repair data for that type of equipment, but your facilities team should be able to help.",
+          ...EMPTY_RESPONSE_FIELDS,
+          reasoning: "Non-medical equipment request.",
+        };
+      }
+
+      if (params.needsClarification) {
+        span.setAttributes({ "response.type": "clarification" });
+        span.setStatus({ code: SpanStatusCode.OK });
+        return {
+          type: "clarification",
+          message: params.clarificationMessage || "I can help with that! Could you tell me the manufacturer and model of the equipment? Any error codes on the display would also help narrow it down.",
+          ...EMPTY_RESPONSE_FIELDS,
+          reasoning: "Not enough information to search. Need manufacturer/model/symptoms.",
+        };
+      }
+
+      // ── Step 3: Search parts — the primary lookup ──
+      const partsInput: Record<string, string> = {};
+      if (params.manufacturer) partsInput.manufacturer = params.manufacturer;
+      if (params.equipmentName) partsInput.equipmentName = params.equipmentName;
+      if (params.errorCode) partsInput.errorCode = params.errorCode;
+      if (params.symptom) partsInput.symptom = params.symptom;
+
+      const parts = await searchParts(partsInput);
+
+      // ── Step 4: Search manual ──
+      const manualInput: Record<string, string> = {};
+      if (params.manufacturer) manualInput.manufacturer = params.manufacturer;
+      if (params.equipmentName) manualInput.equipmentName = params.equipmentName;
+      if (params.errorCode) manualInput.keyword = params.errorCode;
+      else if (params.symptom) manualInput.keyword = params.symptom;
+
+      const manualSections = await searchManual(manualInput);
+
+      // ── Step 5: Suppliers + repair guide (if parts found) ──
+      let suppliers: unknown[] = [];
+      let repairGuide: unknown = null;
+
+      if (Array.isArray(parts) && parts.length > 0) {
+        const topPart = parts[0] as { id: string; supplierIds?: string[] };
+        const [suppResult, guideResult] = await Promise.all([
+          topPart.supplierIds && topPart.supplierIds.length > 0
+            ? getSuppliers({ supplierIds: topPart.supplierIds })
+            : Promise.resolve([]),
+          getRepairGuide({ partId: topPart.id }),
+        ]);
+        suppliers = Array.isArray(suppResult) ? suppResult : [];
+        repairGuide = guideResult;
+      }
+
+      // ── Step 6: Asset lookup (if tag provided) ──
+      let assets: unknown[] = [];
+      if (params.assetTag) {
+        assets = await lookupAsset({ assetTag: params.assetTag });
+      } else if (params.department && params.equipmentName) {
+        assets = await lookupAsset({ department: params.department, equipmentName: params.equipmentName });
+      }
+
+      // ── Step 7: Repair history (if asset found) ──
+      let repairHistory: unknown[] = [];
+      if (Array.isArray(assets) && assets.length > 0) {
+        const topAsset = assets[0] as { assetId: string };
+        repairHistory = await getRepairHistory({ assetId: topAsset.assetId });
+      }
+
+      // ── Step 8: Format response — LLM only formats, never invents ──
+      const toolData = {
+        parts: Array.isArray(parts) ? parts : [],
+        manualSections: Array.isArray(manualSections) ? manualSections : [],
+        suppliers,
+        repairGuide,
+        assets: Array.isArray(assets) ? assets : [],
+        repairHistory: Array.isArray(repairHistory) ? repairHistory : [],
+      };
+
+      const formatted = await ai.generate({
+        system: FORMATTING_PROMPT,
+        messages: genkitHistory,
+        prompt: `Technician asked: "${currentMessage.content}"\n\nTool results:\n${JSON.stringify(toolData, null, 2)}`,
+        output: { schema: ChatAgentResponseSchema },
+      });
+
+      const result = formatted.output;
+
+      if (!result) {
+        const partsArr = toolData.parts as Array<{ name: string; partNumber: string; avgPrice: number }>;
+        const fallbackMsg = partsArr.length > 0
+          ? `I found a potential match: ${partsArr[0].name} (${partsArr[0].partNumber}) at $${partsArr[0].avgPrice.toLocaleString()}. Please verify this matches your equipment.`
+          : "I searched our database but couldn't find a matching part for that equipment. Could you double-check the manufacturer and model?";
+
+        return {
+          type: partsArr.length > 0 ? "diagnosis" : "guidance",
+          message: fallbackMsg,
+          ...EMPTY_RESPONSE_FIELDS,
+          confidence: partsArr.length > 0 ? "medium" : null,
+          reasoning: "Formatting LLM returned null; built fallback from raw tool data.",
+        };
+      }
+
+      const toolCount = (Array.isArray(parts) ? 1 : 0) +
+        (Array.isArray(manualSections) ? 1 : 0) +
+        (suppliers.length > 0 ? 1 : 0) +
+        (repairGuide ? 1 : 0) +
+        (assets.length > 0 ? 1 : 0) +
+        (repairHistory.length > 0 ? 1 : 0);
+
+      span.setAttributes({
+        "response.type": result.type,
+        "part.found": !!(result.recommendedPart),
+        "confidence": result.confidence ?? "null",
+      });
+      span.setStatus({ code: SpanStatusCode.OK });
+      console.log(
+        `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}, tools: ${toolCount}`
+      );
+
+      return result;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRateLimit = msg.includes("429") || msg.toLowerCase().includes("resource exhausted");
+
+      span.recordException(new Error(msg));
+      span.setStatus({ code: SpanStatusCode.ERROR, message: msg });
+      console.error("[agent] Failed:", msg);
+
+      return {
+        type: "clarification",
+        message: isRateLimit
+          ? "The AI service is temporarily rate-limited. Please wait a moment and try again."
+          : "I wasn't able to process that. Could you rephrase your question? Include the equipment manufacturer and model if possible.",
+        ...EMPTY_RESPONSE_FIELDS,
+        reasoning: `Generation failed: ${msg}`,
+      };
     } finally {
       span.end();
     }
@@ -299,21 +348,16 @@ export const diagnosticPartnerChat = ai.defineFlow(
 );
 
 // ---------------------------------------------------------------------------
-// chatStreamWithMetrics — the only way to call the agent
+// chatWithMetrics — runs the agent and returns the response with metrics
 // ---------------------------------------------------------------------------
 
-export async function* chatStreamWithMetrics(messages: ChatMessage[]) {
+export async function chatWithMetrics(messages: ChatMessage[]): Promise<ChatAgentResponse & { _metrics?: unknown }> {
   const collector = new MetricsCollector();
   setActiveCollector(collector);
 
   try {
-    const { stream, output } = diagnosticPartnerChat.stream({ messages });
+    const response = await diagnosticPartnerChat(({ messages } as unknown) as { messages: ChatMessage[] });
 
-    for await (const chunk of stream) {
-      yield chunk as StreamChunk;
-    }
-
-    const response = (await output) as ChatAgentResponse;
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const pseudoResponse: AgentResponse = {
       diagnosis: response.diagnosis ?? response.message,
@@ -328,7 +372,7 @@ export async function* chatStreamWithMetrics(messages: ChatMessage[]) {
     const metrics = collector.finalize(lastUserMsg, pseudoResponse);
     saveMetrics(metrics).catch((err) => console.error("[agent] Failed to save metrics:", err));
 
-    yield { type: "complete" as const, response: { ...response, _metrics: metrics } };
+    return { ...response, _metrics: metrics };
   } finally {
     setActiveCollector(null);
   }

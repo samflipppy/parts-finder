@@ -110,22 +110,9 @@ interface ChatAgentResponse {
   _metrics?: Metrics;
 }
 
-interface ToolDoneEvent { type: "tool_done"; toolName: string; resultCount: number; latencyMs: number }
-interface TextChunkEvent { type: "text_chunk"; text: string }
 interface CompleteEvent { type: "complete"; response: ChatAgentResponse }
 interface StreamErrorEvent { type: "error"; message: string }
-interface PhaseEvent { type: "phase_structuring" }
-type SSEEvent = ToolDoneEvent | TextChunkEvent | CompleteEvent | StreamErrorEvent | PhaseEvent;
-
-type ToolName =
-  | "lookupAsset"
-  | "getRepairHistory"
-  | "listManualSections"
-  | "searchManual"
-  | "getManualSection"
-  | "searchParts"
-  | "getSuppliers"
-  | "getRepairGuide";
+type SSEEvent = CompleteEvent | StreamErrorEvent;
 
 // ---------------------------------------------------------------------------
 // Constants & auth
@@ -145,28 +132,6 @@ function setStoredPassword(pw: string): void {
 function clearStoredPassword(): void {
   sessionStorage.removeItem(AUTH_KEY);
 }
-
-const TOOL_ICONS: Record<ToolName, string> = {
-  lookupAsset: "\u{1F3E5}",
-  getRepairHistory: "\u{1F4CB}",
-  listManualSections: "\u{1F4D6}",
-  searchManual: "\u{1F50D}",
-  getManualSection: "\u{1F4C4}",
-  searchParts: "\u{1F527}",
-  getSuppliers: "\u{1F4E6}",
-  getRepairGuide: "\u{1F6E0}",
-};
-
-const TOOL_LABELS: Record<ToolName, string> = {
-  lookupAsset: "Looking up equipment asset",
-  getRepairHistory: "Checking repair history",
-  listManualSections: "Loading service manual",
-  searchManual: "Searching manual sections",
-  getManualSection: "Reading manual section",
-  searchParts: "Searching parts catalog",
-  getSuppliers: "Getting supplier data",
-  getRepairGuide: "Loading repair guide",
-};
 
 // ---------------------------------------------------------------------------
 // State
@@ -383,36 +348,15 @@ function handleSend(): void {
   chatInput.style.height = "auto";
   setLoading(true);
 
-  // Streaming progress bubble
-  const streamBubble = document.createElement("div");
-  streamBubble.className = "chat-bubble chat-bubble-assistant stream-bubble";
-  chatMessages.appendChild(streamBubble);
-
-  const progressEl = document.createElement("div");
-  progressEl.className = "stream-progress";
-  streamBubble.appendChild(progressEl);
-
-  const streamTextEl = document.createElement("div");
-  streamTextEl.className = "stream-text";
-  streamBubble.appendChild(streamTextEl);
-
-  // Show typing dots immediately so the bubble isn't blank while waiting
+  // Loading bubble with typing dots
+  const loadingBubble = document.createElement("div");
+  loadingBubble.className = "chat-bubble chat-bubble-assistant";
   const typingEl = document.createElement("div");
   typingEl.className = "typing-indicator";
   typingEl.innerHTML = "<span></span><span></span><span></span>";
-  streamBubble.appendChild(typingEl);
+  loadingBubble.appendChild(typingEl);
+  chatMessages.appendChild(loadingBubble);
   scrollToBottom();
-
-  const completedTools: ToolDoneEvent[] = [];
-  let streamedText = "";
-  let typingRemoved = false;
-
-  function removeTypingIndicator(): void {
-    if (!typingRemoved && typingEl.parentNode) {
-      typingEl.remove();
-      typingRemoved = true;
-    }
-  }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const pw = getStoredPassword();
@@ -468,32 +412,13 @@ function handleSend(): void {
             try { event = JSON.parse(trimmed.substring(6)); } catch { continue; }
 
             switch (event.type) {
-              case "tool_done":
-                removeTypingIndicator();
-                completedTools.push(event);
-                renderToolProgress(progressEl, completedTools);
-                break;
-              case "text_chunk":
-                removeTypingIndicator();
-                streamedText += event.text;
-                streamTextEl.textContent = streamedText;
-                scrollToBottom();
-                break;
-              case "phase_structuring": {
-                removeTypingIndicator();
-                const phaseEl = document.createElement("div");
-                phaseEl.className = "stream-phase-indicator";
-                phaseEl.textContent = "Structuring response...";
-                progressEl.appendChild(phaseEl);
-                break;
-              }
               case "complete":
-                streamBubble.remove();
+                loadingBubble.remove();
                 lastRequestId = event.response._metrics?.requestId ?? null;
                 renderAssistantResponse(event.response);
                 break;
               case "error":
-                streamBubble.remove();
+                loadingBubble.remove();
                 appendBubble("error", event.message || "Something went wrong.");
                 break;
             }
@@ -514,47 +439,13 @@ function handleSend(): void {
         lastUserMessage: text,
         timestamp: new Date().toISOString(),
       });
-      streamBubble.remove();
+      loadingBubble.remove();
       appendBubble("error", err.message || "Something went wrong. Please try again.");
     })
     .finally(() => {
       setLoading(false);
       chatInput.focus();
     });
-}
-
-// ---------------------------------------------------------------------------
-// Tool progress rendering
-// ---------------------------------------------------------------------------
-
-function renderToolProgress(container: HTMLElement, tools: ToolDoneEvent[]): void {
-  const phaseIndicator = container.querySelector(".stream-phase-indicator");
-  container.innerHTML = "";
-
-  const header = document.createElement("div");
-  header.className = "stream-progress-header";
-  header.textContent = "Researching...";
-  container.appendChild(header);
-
-  for (const tool of tools) {
-    const el = document.createElement("div");
-    el.className = "stream-tool-item";
-
-    const icon = TOOL_ICONS[tool.toolName as ToolName] ?? "\u2699";
-    const label = TOOL_LABELS[tool.toolName as ToolName] ?? tool.toolName;
-    const plural = tool.resultCount !== 1 ? "s" : "";
-
-    el.innerHTML =
-      `<span class="tool-icon">${icon}</span>` +
-      `<span class="tool-label">${escapeHtml(label)}</span>` +
-      `<span class="tool-result">${tool.resultCount} result${plural}</span>` +
-      `<span class="tool-latency">${tool.latencyMs}ms</span>`;
-
-    container.appendChild(el);
-  }
-
-  if (phaseIndicator) container.appendChild(phaseIndicator);
-  scrollToBottom();
 }
 
 // ---------------------------------------------------------------------------
