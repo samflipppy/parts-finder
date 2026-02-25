@@ -197,7 +197,8 @@ Write-Host "Log-based metrics created."
 
 Write-Host "Creating Cloud Monitoring dashboard..."
 
-$dashboardJson = (Get-Content -Path "monitoring\dashboard.json" -Raw) -replace '\$\{PROJECT_ID\}', $PROJECT_ID
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$dashboardJson = (Get-Content -Path (Join-Path $scriptDir "dashboard.json") -Raw) -replace '\$\{PROJECT_ID\}', $PROJECT_ID
 
 # Check if dashboard exists
 $existing = gcloud monitoring dashboards list --format="value(name)" --filter="displayName='PartsFinder Agent Health'" 2>$null
