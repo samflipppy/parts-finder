@@ -94,6 +94,93 @@ export interface SectionEmbedding {
 }
 
 // ---------------------------------------------------------------------------
+// Equipment assets (hospital inventory)
+// ---------------------------------------------------------------------------
+
+export interface EquipmentAsset {
+  assetId: string;             // e.g. "ASSET-4302"
+  assetTag: string;            // physical label on the unit
+  equipmentName: string;       // e.g. "Evita V500"
+  manufacturer: string;
+  serialNumber: string;
+  department: string;          // e.g. "ICU-3", "OR-7"
+  location: string;            // e.g. "Building A, Floor 3, Room 312"
+  installDate: string;         // ISO date
+  warrantyExpiry: string;      // ISO date
+  hoursLogged: number;         // total operating hours
+  status: "active" | "down" | "maintenance" | "retired";
+  lastPmDate: string;          // last preventive maintenance
+  nextPmDue: string;           // next PM due date
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (live stock & pricing per supplier)
+// ---------------------------------------------------------------------------
+
+export interface InventoryRecord {
+  partId: string;
+  partNumber: string;
+  supplierId: string;
+  supplierName: string;
+  inStock: boolean;
+  quantityAvailable: number;
+  unitPrice: number;           // current price (may differ from avgPrice)
+  leadTimeDays: number;        // delivery estimate
+  lastUpdated: string;         // ISO timestamp
+  isOEM: boolean;
+  contractPricing: boolean;    // hospital has negotiated rate
+}
+
+// ---------------------------------------------------------------------------
+// Work orders
+// ---------------------------------------------------------------------------
+
+export interface WorkOrder {
+  workOrderId: string;
+  assetId: string;
+  equipmentName: string;
+  manufacturer: string;
+  department: string;
+  priority: "emergency" | "urgent" | "routine" | "scheduled";
+  status: "open" | "in_progress" | "parts_ordered" | "completed" | "cancelled";
+  createdAt: string;
+  completedAt: string | null;
+  technicianNotes: string;
+  diagnosis: string;
+  partsUsed: Array<{
+    partNumber: string;
+    partName: string;
+    quantity: number;
+    unitCost: number;
+  }>;
+  laborHours: number;
+  totalCost: number;
+  rootCause: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Order requests (cart / PO line items)
+// ---------------------------------------------------------------------------
+
+export interface OrderRequest {
+  orderId: string;
+  partId: string;
+  partNumber: string;
+  partName: string;
+  supplierId: string;
+  supplierName: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  workOrderId: string | null;
+  assetId: string | null;
+  status: "cart" | "pending_approval" | "approved" | "ordered" | "shipped" | "delivered";
+  createdAt: string;
+  estimatedDelivery: string;
+  requestedBy: string;
+}
+
+// ---------------------------------------------------------------------------
 // Chat messages
 // ---------------------------------------------------------------------------
 
@@ -181,5 +268,26 @@ export interface ChatAgentResponse {
   confidence: "high" | "medium" | "low" | null;
   reasoning: string | null;
   warnings: string[];
+  // --- PartsSource business fields ---
+  inventory: Array<{
+    supplierName: string;
+    unitPrice: number;
+    quantityAvailable: number;
+    leadTimeDays: number;
+    inStock: boolean;
+    isOEM: boolean;
+    contractPricing: boolean;
+  }>;
+  equipmentAsset: {
+    assetId: string;
+    assetTag: string;
+    department: string;
+    location: string;
+    hoursLogged: number;
+    warrantyExpiry: string;
+    status: string;
+  } | null;
+  workOrderId: string | null;
+  orderRequestId: string | null;
 }
 

@@ -658,7 +658,386 @@
   color: #9ca3af;
 }
 
-/* Responsive */
+/* ==========================================================================
+   Streaming progress (live tool events)
+   ========================================================================== */
+
+.stream-bubble {
+  min-height: 60px;
+}
+
+.stream-progress {
+  margin-bottom: 0.5rem;
+}
+
+.stream-progress-header {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  margin-bottom: 0.4rem;
+}
+
+.stream-tool-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  margin-bottom: 0.2rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  animation: tool-appear 0.3s ease-out;
+}
+
+@keyframes tool-appear {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tool-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.tool-label {
+  flex: 1;
+  color: #1a1a1a;
+  font-weight: 500;
+}
+
+.tool-result {
+  font-size: 0.72rem;
+  color: #059669;
+  font-weight: 600;
+}
+
+.tool-latency {
+  font-size: 0.68rem;
+  color: #9ca3af;
+  font-family: monospace;
+}
+
+.stream-phase-indicator {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: #2563eb;
+  font-weight: 600;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.stream-text {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #374151;
+  white-space: pre-wrap;
+}
+
+/* ==========================================================================
+   Equipment asset card
+   ========================================================================== */
+
+.bubble-asset-card {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #f0f4ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+}
+
+.asset-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.asset-card-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #4338ca;
+}
+
+.asset-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem 1rem;
+}
+
+.asset-field {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  padding: 0.15rem 0;
+}
+
+.asset-label {
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.warranty-active {
+  background: #dcfce7;
+  color: #166534;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+}
+
+.warranty-expired {
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+}
+
+.badge-status-active {
+  background: #dcfce7;
+  color: #166534;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.badge-status-down {
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.badge-status-maintenance {
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   Live inventory table
+   ========================================================================== */
+
+.inventory-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.inventory-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+}
+
+.inventory-table th {
+  text-align: left;
+  font-weight: 600;
+  color: #6b7280;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.inventory-table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+
+.inventory-table tr:hover {
+  background: #f9fafb;
+}
+
+.stock-available {
+  color: #059669;
+  font-weight: 600;
+}
+
+.stock-out {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.type-oem {
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.type-aftermarket {
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.badge-contract {
+  display: inline-block;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.08rem 0.3rem;
+  border-radius: 3px;
+  margin-left: 0.3rem;
+  vertical-align: middle;
+}
+
+.add-to-cart-btn {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  background: #059669;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.add-to-cart-btn:hover {
+  background: #047857;
+}
+
+/* ==========================================================================
+   Work order & order action badges
+   ========================================================================== */
+
+.action-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.work-order-badge {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+}
+
+.order-badge {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.action-badge-icon {
+  font-size: 1.1rem;
+}
+
+.action-badge-text {
+  font-weight: 500;
+}
+
+/* Create Work Order button */
+.work-order-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.6rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  background: #2563eb;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.work-order-btn:hover {
+  background: #1d4ed8;
+}
+
+/* ==========================================================================
+   Badge improvements
+   ========================================================================== */
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.badge-confidence-high {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge-confidence-medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-confidence-low {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.badge-critical {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.badge-high {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.badge-medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-low {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
 @media (max-width: 600px) {
   .chat-main {
     padding: 0 0.5rem;
@@ -667,5 +1046,18 @@
 
   .chat-bubble {
     max-width: 92%;
+  }
+
+  .asset-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-table {
+    font-size: 0.72rem;
+  }
+
+  .inventory-table th:nth-child(5),
+  .inventory-table td:nth-child(5) {
+    display: none;
   }
 }

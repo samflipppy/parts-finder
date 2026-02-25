@@ -2,7 +2,7 @@ import { z } from "genkit";
 import { SpanStatusCode } from "@opentelemetry/api";
 import type { AgentResponse, ChatMessage, ChatAgentResponse } from "./types";
 import { ai, tracer, generateWithRetry } from "./ai";
-import { RESEARCH_PROMPT, STRUCTURE_PROMPT } from "./prompts";
+import { SYSTEM_PROMPT, STRUCTURE_PROMPT } from "./prompts";
 import {
   listManualSections,
   searchManual,
@@ -10,6 +10,11 @@ import {
   searchParts,
   getSuppliers,
   getRepairGuide,
+  lookupAsset,
+  checkInventory,
+  getRepairHistory,
+  createWorkOrder,
+  createOrderRequest,
 } from "./tools";
 import {
   MetricsCollector,
@@ -74,6 +79,31 @@ const ChatAgentResponseSchema = z.object({
   confidence: z.enum(["high", "medium", "low"]).nullable(),
   reasoning: z.string().nullable(),
   warnings: z.array(z.string()),
+  // PartsSource business fields
+  inventory: z.array(
+    z.object({
+      supplierName: z.string(),
+      unitPrice: z.number(),
+      quantityAvailable: z.number(),
+      leadTimeDays: z.number(),
+      inStock: z.boolean(),
+      isOEM: z.boolean(),
+      contractPricing: z.boolean(),
+    })
+  ),
+  equipmentAsset: z
+    .object({
+      assetId: z.string(),
+      assetTag: z.string(),
+      department: z.string(),
+      location: z.string(),
+      hoursLogged: z.number(),
+      warrantyExpiry: z.string(),
+      status: z.string(),
+    })
+    .nullable(),
+  workOrderId: z.string().nullable(),
+  orderRequestId: z.string().nullable(),
 });
 
 const StreamChunkSchema = z.discriminatedUnion("type", [
@@ -81,6 +111,29 @@ const StreamChunkSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text_chunk"), text: z.string() }),
   z.object({ type: z.literal("phase_structuring") }),
 ]);
+
+// All tools available to the agent
+const ALL_TOOLS = [
+  listManualSections,
+  searchManual,
+  getManualSection,
+  searchParts,
+  getSuppliers,
+  getRepairGuide,
+  lookupAsset,
+  checkInventory,
+  getRepairHistory,
+  createWorkOrder,
+  createOrderRequest,
+];
+
+// Default empty business fields for error/fallback responses
+const EMPTY_BUSINESS_FIELDS = {
+  inventory: [] as ChatAgentResponse["inventory"],
+  equipmentAsset: null,
+  workOrderId: null,
+  orderRequestId: null,
+};
 
 // ---------------------------------------------------------------------------
 // diagnosticPartnerChat flow
@@ -112,19 +165,21 @@ export const diagnosticPartnerChat = ai.defineFlow(
       content: [{ text: msg.content }],
     }));
 
+    // -----------------------------------------------------------------------
+    // Phase 1: Research with tool calling (streaming)
+    // -----------------------------------------------------------------------
+
     const phase1Opts: Parameters<typeof ai.generate>[0] = {
-      system: RESEARCH_PROMPT,
+      system: SYSTEM_PROMPT,
       messages: genkitHistory,
       prompt: currentMessage.content,
-      tools: [listManualSections, searchManual, getManualSection, searchParts, getSuppliers, getRepairGuide],
-      maxTurns: 12,
+      tools: ALL_TOOLS,
+      maxTurns: 15,
     };
 
     let phase1Text: string;
     const phase1Span = tracer.startSpan("phase1.research", {
-      attributes: {
-        "messages.count": input.messages.length,
-      },
+      attributes: { "messages.count": input.messages.length },
     });
     try {
       const { response: phase1Promise, stream: phase1Stream } = ai.generateStream(phase1Opts);
@@ -138,7 +193,6 @@ export const diagnosticPartnerChat = ai.defineFlow(
       phase1Span.setAttribute("response.chars", phase1Text.length);
       phase1Span.setStatus({ code: SpanStatusCode.OK });
       console.log(`[diagnosticPartnerChat] Phase 1 complete — ${phase1Text.length} chars`);
-      console.log(`[diagnosticPartnerChat] Phase 1 preview: ${phase1Text.substring(0, 600)}`);
     } catch (genErr: unknown) {
       const msg = genErr instanceof Error ? genErr.message : String(genErr);
       phase1Span.recordException(new Error(msg));
@@ -161,10 +215,15 @@ export const diagnosticPartnerChat = ai.defineFlow(
         confidence: null,
         reasoning: `Phase 1 generation failed: ${msg}`,
         warnings: [],
+        ...EMPTY_BUSINESS_FIELDS,
       };
     } finally {
       phase1Span.end();
     }
+
+    // -----------------------------------------------------------------------
+    // Phase 2: Structure into JSON (fast extraction)
+    // -----------------------------------------------------------------------
 
     sendChunk({ type: "phase_structuring" });
 
@@ -184,10 +243,12 @@ export const diagnosticPartnerChat = ai.defineFlow(
         "part.found": !!(result?.recommendedPart),
         "confidence": result?.confidence ?? "null",
         "manual.refs": result?.manualReferences?.length ?? 0,
+        "inventory.count": result?.inventory?.length ?? 0,
+        "has.asset": !!(result?.equipmentAsset),
       });
       phase2Span.setStatus({ code: SpanStatusCode.OK });
       console.log(
-        `[diagnosticPartnerChat] Phase 2 complete — type: ${result?.type}, refs: ${result?.manualReferences?.length ?? 0}, part: ${result?.recommendedPart?.partNumber ?? "none"}`
+        `[diagnosticPartnerChat] Phase 2 complete — type: ${result?.type}, refs: ${result?.manualReferences?.length ?? 0}, part: ${result?.recommendedPart?.partNumber ?? "none"}, inventory: ${result?.inventory?.length ?? 0}`
       );
     } catch (structErr: unknown) {
       const msg = structErr instanceof Error ? structErr.message : String(structErr);
@@ -208,6 +269,7 @@ export const diagnosticPartnerChat = ai.defineFlow(
         confidence: "medium",
         reasoning: `Structured formatting failed: ${msg}`,
         warnings: [],
+        ...EMPTY_BUSINESS_FIELDS,
       };
     } finally {
       phase2Span.end();
@@ -229,6 +291,7 @@ export const diagnosticPartnerChat = ai.defineFlow(
         confidence: "medium",
         reasoning: "Structured output was null; returning raw research text.",
         warnings: [],
+        ...EMPTY_BUSINESS_FIELDS,
       };
     }
 

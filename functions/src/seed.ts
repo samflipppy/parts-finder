@@ -11,7 +11,7 @@ dotenv.config();
 
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { Part, Supplier, RepairGuide, ServiceManual } from "./types";
+import { Part, Supplier, RepairGuide, ServiceManual, EquipmentAsset, InventoryRecord, WorkOrder } from "./types";
 import { extraRepairGuides } from "./__generated__/repair-guides-extra";
 
 initializeApp();
@@ -1311,6 +1311,264 @@ const serviceManuals: ServiceManual[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Equipment assets (hospital inventory)
+// ---------------------------------------------------------------------------
+
+const equipmentAssets: EquipmentAsset[] = [
+  {
+    assetId: "ASSET-4302",
+    assetTag: "ASSET-4302",
+    equipmentName: "Evita V500",
+    manufacturer: "Drager",
+    serialNumber: "SN-V500-2847",
+    department: "ICU-3",
+    location: "Building A, Floor 3, Room 312",
+    installDate: "2020-03-15",
+    warrantyExpiry: "2025-03-15",
+    hoursLogged: 14200,
+    status: "active",
+    lastPmDate: "2025-11-01",
+    nextPmDue: "2026-05-01",
+  },
+  {
+    assetId: "ASSET-4303",
+    assetTag: "ASSET-4303",
+    equipmentName: "Evita V500",
+    manufacturer: "Drager",
+    serialNumber: "SN-V500-3102",
+    department: "ICU-3",
+    location: "Building A, Floor 3, Room 314",
+    installDate: "2020-03-15",
+    warrantyExpiry: "2025-03-15",
+    hoursLogged: 13800,
+    status: "active",
+    lastPmDate: "2025-11-01",
+    nextPmDue: "2026-05-01",
+  },
+  {
+    assetId: "ASSET-5501",
+    assetTag: "ASSET-5501",
+    equipmentName: "IntelliVue MX800",
+    manufacturer: "Philips",
+    serialNumber: "SN-MX800-1192",
+    department: "ICU-2",
+    location: "Building A, Floor 2, Room 208",
+    installDate: "2021-06-20",
+    warrantyExpiry: "2026-06-20",
+    hoursLogged: 9800,
+    status: "active",
+    lastPmDate: "2025-12-15",
+    nextPmDue: "2026-06-15",
+  },
+  {
+    assetId: "ASSET-5502",
+    assetTag: "ASSET-5502",
+    equipmentName: "IntelliVue MX800",
+    manufacturer: "Philips",
+    serialNumber: "SN-MX800-1193",
+    department: "OR-7",
+    location: "Building B, Floor 1, OR Suite 7",
+    installDate: "2021-06-20",
+    warrantyExpiry: "2026-06-20",
+    hoursLogged: 8400,
+    status: "active",
+    lastPmDate: "2025-12-15",
+    nextPmDue: "2026-06-15",
+  },
+  {
+    assetId: "ASSET-6001",
+    assetTag: "ASSET-6001",
+    equipmentName: "Optima CT660",
+    manufacturer: "GE",
+    serialNumber: "SN-CT660-0487",
+    department: "Radiology",
+    location: "Building C, Floor 1, CT Suite 2",
+    installDate: "2019-09-10",
+    warrantyExpiry: "2024-09-10",
+    hoursLogged: 22500,
+    status: "active",
+    lastPmDate: "2025-10-20",
+    nextPmDue: "2026-04-20",
+  },
+  {
+    assetId: "ASSET-7010",
+    assetTag: "ASSET-7010",
+    equipmentName: "R Series",
+    manufacturer: "Zoll",
+    serialNumber: "SN-ZOLL-R-3341",
+    department: "ED",
+    location: "Building A, Floor 1, Trauma Bay 2",
+    installDate: "2022-01-15",
+    warrantyExpiry: "2027-01-15",
+    hoursLogged: 3200,
+    status: "active",
+    lastPmDate: "2025-09-01",
+    nextPmDue: "2026-03-01",
+  },
+  {
+    assetId: "ASSET-7011",
+    assetTag: "ASSET-7011",
+    equipmentName: "R Series",
+    manufacturer: "Zoll",
+    serialNumber: "SN-ZOLL-R-3342",
+    department: "ICU-1",
+    location: "Building A, Floor 2, Room 201",
+    installDate: "2022-01-15",
+    warrantyExpiry: "2027-01-15",
+    hoursLogged: 4100,
+    status: "active",
+    lastPmDate: "2025-09-01",
+    nextPmDue: "2026-03-01",
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Inventory (live stock & pricing per supplier per part)
+// ---------------------------------------------------------------------------
+
+const inventory: InventoryRecord[] = [
+  // Fan Module Assembly — DRG-8306750
+  { partId: "part_001", partNumber: "DRG-8306750", supplierId: "sup_002", supplierName: "ClinicalSource OEM", inStock: true, quantityAvailable: 4, unitPrice: 1895, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: true },
+  { partId: "part_001", partNumber: "DRG-8306750", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 7, unitPrice: 1750, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
+  { partId: "part_001", partNumber: "DRG-8306750", supplierId: "sup_004", supplierName: "National Medical Supply", inStock: true, quantityAvailable: 2, unitPrice: 1820, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: true },
+  { partId: "part_001", partNumber: "DRG-8306750", supplierId: "sup_007", supplierName: "QuickShip Medical", inStock: true, quantityAvailable: 1, unitPrice: 1680, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
+
+  // Flow Sensor — DRG-8404500
+  { partId: "part_002", partNumber: "DRG-8404500", supplierId: "sup_002", supplierName: "ClinicalSource OEM", inStock: true, quantityAvailable: 12, unitPrice: 385, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: true },
+  { partId: "part_002", partNumber: "DRG-8404500", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 20, unitPrice: 340, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
+
+  // Display Panel — PH-453564201591
+  { partId: "part_006", partNumber: "PH-453564201591", supplierId: "sup_005", supplierName: "Heartland HTM Supply", inStock: true, quantityAvailable: 3, unitPrice: 2100, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: true },
+  { partId: "part_006", partNumber: "PH-453564201591", supplierId: "sup_006", supplierName: "PrecisionMed Parts", inStock: false, quantityAvailable: 0, unitPrice: 2350, leadTimeDays: 7, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: false },
+
+  // SpO2 Module — PH-M1020B
+  { partId: "part_007", partNumber: "PH-M1020B", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 8, unitPrice: 920, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
+  { partId: "part_007", partNumber: "PH-M1020B", supplierId: "sup_006", supplierName: "PrecisionMed Parts", inStock: true, quantityAvailable: 5, unitPrice: 1050, leadTimeDays: 3, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: true },
+
+  // X-Ray Tube — GE-2275207
+  { partId: "part_011", partNumber: "GE-2275207", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 1, unitPrice: 42500, leadTimeDays: 5, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: true },
+  { partId: "part_011", partNumber: "GE-2275207", supplierId: "sup_006", supplierName: "PrecisionMed Parts", inStock: true, quantityAvailable: 2, unitPrice: 48000, leadTimeDays: 3, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: false },
+  { partId: "part_011", partNumber: "GE-2275207", supplierId: "sup_003", supplierName: "BioEquip Solutions", inStock: false, quantityAvailable: 0, unitPrice: 39800, leadTimeDays: 14, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
+
+  // Zoll Battery Pack — ZOLL-8019-0535-01
+  { partId: "part_016", partNumber: "ZOLL-8019-0535-01", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 15, unitPrice: 245, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
+  { partId: "part_016", partNumber: "ZOLL-8019-0535-01", supplierId: "sup_005", supplierName: "Heartland HTM Supply", inStock: true, quantityAvailable: 8, unitPrice: 260, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: true },
+
+  // Exhalation Valve — DRG-8412960
+  { partId: "part_003", partNumber: "DRG-8412960", supplierId: "sup_002", supplierName: "ClinicalSource OEM", inStock: true, quantityAvailable: 6, unitPrice: 475, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: true },
+  { partId: "part_003", partNumber: "DRG-8412960", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 10, unitPrice: 420, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
+];
+
+// ---------------------------------------------------------------------------
+// Work orders (historical repair records)
+// ---------------------------------------------------------------------------
+
+const workOrders: WorkOrder[] = [
+  {
+    workOrderId: "WO-HIST-001",
+    assetId: "ASSET-4302",
+    equipmentName: "Evita V500",
+    manufacturer: "Drager",
+    department: "ICU-3",
+    priority: "urgent",
+    status: "completed",
+    createdAt: "2025-08-14T09:30:00Z",
+    completedAt: "2025-08-14T11:45:00Z",
+    technicianNotes: "Fan noise increasing over past week, error 57 appeared this morning",
+    diagnosis: "Fan module bearing wear causing Error 57. Fan assembly replaced.",
+    partsUsed: [{ partNumber: "DRG-8306750", partName: "Fan Module Assembly", quantity: 1, unitCost: 1850 }],
+    laborHours: 1.5,
+    totalCost: 2075,
+    rootCause: "Bearing wear due to 12,000+ hours of operation without preventive replacement",
+  },
+  {
+    workOrderId: "WO-HIST-002",
+    assetId: "ASSET-4302",
+    equipmentName: "Evita V500",
+    manufacturer: "Drager",
+    department: "ICU-3",
+    priority: "routine",
+    status: "completed",
+    createdAt: "2025-03-20T14:00:00Z",
+    completedAt: "2025-03-20T15:30:00Z",
+    technicianNotes: "Routine PM — flow sensor calibration out of spec",
+    diagnosis: "Flow sensor drift detected during PM. Sensor replaced and recalibrated.",
+    partsUsed: [{ partNumber: "DRG-8404500", partName: "Flow Sensor Assembly", quantity: 1, unitCost: 350 }],
+    laborHours: 1.0,
+    totalCost: 500,
+    rootCause: "Normal wear — flow sensor has ~2 year service life at this utilization",
+  },
+  {
+    workOrderId: "WO-HIST-003",
+    assetId: "ASSET-5501",
+    equipmentName: "IntelliVue MX800",
+    manufacturer: "Philips",
+    department: "ICU-2",
+    priority: "urgent",
+    status: "completed",
+    createdAt: "2025-06-12T07:15:00Z",
+    completedAt: "2025-06-12T09:00:00Z",
+    technicianNotes: "Display flickering intermittently, went completely black",
+    diagnosis: "Display panel backlight inverter failure. Replaced display panel assembly.",
+    partsUsed: [{ partNumber: "PH-453564201591", partName: "Display Panel Assembly", quantity: 1, unitCost: 2200 }],
+    laborHours: 1.5,
+    totalCost: 2425,
+    rootCause: "Backlight inverter component degradation — common failure mode at 8000+ hours",
+  },
+  {
+    workOrderId: "WO-HIST-004",
+    assetId: "ASSET-6001",
+    equipmentName: "Optima CT660",
+    manufacturer: "GE",
+    department: "Radiology",
+    priority: "emergency",
+    status: "completed",
+    createdAt: "2025-10-05T06:00:00Z",
+    completedAt: "2025-10-06T14:00:00Z",
+    technicianNotes: "Tube arc fault during morning scans. CT down, patients being diverted.",
+    diagnosis: "X-ray tube end of life. Tube arcing under load. Full tube replacement performed.",
+    partsUsed: [{ partNumber: "GE-2275207", partName: "X-Ray Tube Assembly", quantity: 1, unitCost: 45000 }],
+    laborHours: 8.0,
+    totalCost: 46200,
+    rootCause: "X-ray tube exceeded rated heat unit capacity at 20,000+ hours",
+  },
+  {
+    workOrderId: "WO-HIST-005",
+    assetId: "ASSET-4303",
+    equipmentName: "Evita V500",
+    manufacturer: "Drager",
+    department: "ICU-3",
+    priority: "routine",
+    status: "completed",
+    createdAt: "2025-11-01T10:00:00Z",
+    completedAt: "2025-11-01T12:00:00Z",
+    technicianNotes: "Scheduled PM — exhalation valve diaphragm showing wear",
+    diagnosis: "Preventive replacement of exhalation valve assembly during scheduled PM.",
+    partsUsed: [{ partNumber: "DRG-8412960", partName: "Exhalation Valve Assembly", quantity: 1, unitCost: 450 }],
+    laborHours: 1.0,
+    totalCost: 600,
+    rootCause: "Preventive replacement — valve diaphragm shows elasticity loss at 13,000 hours",
+  },
+  {
+    workOrderId: "WO-HIST-006",
+    assetId: "ASSET-7010",
+    equipmentName: "R Series",
+    manufacturer: "Zoll",
+    department: "ED",
+    priority: "urgent",
+    status: "completed",
+    createdAt: "2025-07-22T16:30:00Z",
+    completedAt: "2025-07-22T17:15:00Z",
+    technicianNotes: "Battery not holding charge, unit failing daily self-test",
+    diagnosis: "Battery pack degraded below acceptable capacity. Replaced with new battery.",
+    partsUsed: [{ partNumber: "ZOLL-8019-0535-01", partName: "SurePower Battery Pack", quantity: 1, unitCost: 250 }],
+    laborHours: 0.5,
+    totalCost: 325,
+    rootCause: "Battery cell degradation after 3 years and ~500 charge cycles",
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Seeder logic
 // ---------------------------------------------------------------------------
 
@@ -1358,11 +1616,45 @@ async function seed(): Promise<void> {
   await manualBatch.commit();
   console.log("  Service manuals seeded successfully.\n");
 
+  // Seed equipment assets
+  console.log(`Seeding ${equipmentAssets.length} equipment assets...`);
+  const assetBatch = db.batch();
+  for (const asset of equipmentAssets) {
+    const ref = db.collection("equipment_assets").doc(asset.assetId);
+    assetBatch.set(ref, asset);
+  }
+  await assetBatch.commit();
+  console.log("  Equipment assets seeded successfully.\n");
+
+  // Seed inventory records
+  console.log(`Seeding ${inventory.length} inventory records...`);
+  const invBatch = db.batch();
+  for (const inv of inventory) {
+    const docId = `${inv.partId}_${inv.supplierId}`;
+    const ref = db.collection("inventory").doc(docId);
+    invBatch.set(ref, inv);
+  }
+  await invBatch.commit();
+  console.log("  Inventory records seeded successfully.\n");
+
+  // Seed work orders (historical)
+  console.log(`Seeding ${workOrders.length} work orders...`);
+  const woBatch = db.batch();
+  for (const wo of workOrders) {
+    const ref = db.collection("work_orders").doc(wo.workOrderId);
+    woBatch.set(ref, wo);
+  }
+  await woBatch.commit();
+  console.log("  Work orders seeded successfully.\n");
+
   console.log("Seeding complete!");
   console.log(`  - ${suppliers.length} suppliers`);
   console.log(`  - ${parts.length} parts`);
   console.log(`  - ${allGuides.length} repair guides`);
   console.log(`  - ${serviceManuals.length} service manuals`);
+  console.log(`  - ${equipmentAssets.length} equipment assets`);
+  console.log(`  - ${inventory.length} inventory records`);
+  console.log(`  - ${workOrders.length} work orders`);
 }
 
 seed().catch((err) => {

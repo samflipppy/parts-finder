@@ -4,7 +4,7 @@ import { trace } from "@opentelemetry/api";
 import { ai } from "./ai";
 import { getActiveCollector, type FilterStep, type RAGTraceData } from "./metrics";
 import { cosineSimilarity } from "./utils";
-import type { Part, Supplier, RepairGuide, ServiceManual, SectionEmbedding } from "./types";
+import type { Part, Supplier, RepairGuide, ServiceManual, SectionEmbedding, EquipmentAsset, InventoryRecord, WorkOrder, OrderRequest } from "./types";
 
 // Re-export for external consumers
 export { cosineSimilarity, filterParts } from "./utils";
@@ -598,6 +598,437 @@ export const getManualSection = ai.defineTool(
       warnings: section.warnings,
       steps: section.steps,
       tools: section.tools,
+    };
+  }
+);
+
+// ---------------------------------------------------------------------------
+// lookupAsset
+// ---------------------------------------------------------------------------
+
+const AssetSchema = z.object({
+  assetId: z.string(),
+  assetTag: z.string(),
+  equipmentName: z.string(),
+  manufacturer: z.string(),
+  serialNumber: z.string(),
+  department: z.string(),
+  location: z.string(),
+  installDate: z.string(),
+  warrantyExpiry: z.string(),
+  hoursLogged: z.number(),
+  status: z.enum(["active", "down", "maintenance", "retired"]),
+  lastPmDate: z.string(),
+  nextPmDue: z.string(),
+});
+
+export const lookupAsset = ai.defineTool(
+  {
+    name: "lookupAsset",
+    description:
+      "Look up a hospital equipment asset by asset tag, serial number, or equipment name + department. " +
+      "Returns the asset record including location, operating hours, warranty status, and maintenance schedule. " +
+      "Call this when the technician identifies a specific unit (e.g. 'unit 4302 in ICU' or 'serial SN-V500-2847').",
+    inputSchema: z.object({
+      assetTag: z
+        .string()
+        .optional()
+        .describe("Physical asset tag on the unit, e.g. 'ASSET-4302'"),
+      serialNumber: z
+        .string()
+        .optional()
+        .describe("Equipment serial number, e.g. 'SN-V500-2847'"),
+      equipmentName: z
+        .string()
+        .optional()
+        .describe("Equipment model name, e.g. 'Evita V500'"),
+      department: z
+        .string()
+        .optional()
+        .describe("Hospital department, e.g. 'ICU-3', 'OR-7'"),
+    }),
+    outputSchema: z.array(AssetSchema),
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+    const snapshot = await db.collection("equipment_assets").get();
+    let results: EquipmentAsset[] = snapshot.docs.map(
+      (doc: QueryDocumentSnapshot) => doc.data() as EquipmentAsset
+    );
+
+    if (input.assetTag) {
+      const term = input.assetTag.toUpperCase();
+      results = results.filter((a) => a.assetTag.toUpperCase().includes(term));
+    }
+    if (input.serialNumber) {
+      const term = input.serialNumber.toUpperCase();
+      results = results.filter((a) => a.serialNumber.toUpperCase().includes(term));
+    }
+    if (input.equipmentName) {
+      const term = input.equipmentName.toLowerCase();
+      results = results.filter((a) => a.equipmentName.toLowerCase().includes(term));
+    }
+    if (input.department) {
+      const term = input.department.toLowerCase();
+      results = results.filter((a) => a.department.toLowerCase().includes(term));
+    }
+
+    const latencyMs = Date.now() - startTime;
+    console.log(`[lookupAsset] ${results.length} results (${latencyMs}ms)`);
+    getActiveCollector()?.recordToolCall("lookupAsset", input as Record<string, unknown>, results.length, latencyMs);
+    return results;
+  }
+);
+
+// ---------------------------------------------------------------------------
+// checkInventory
+// ---------------------------------------------------------------------------
+
+const InventoryResultSchema = z.object({
+  partId: z.string(),
+  partNumber: z.string(),
+  supplierId: z.string(),
+  supplierName: z.string(),
+  inStock: z.boolean(),
+  quantityAvailable: z.number(),
+  unitPrice: z.number(),
+  leadTimeDays: z.number(),
+  lastUpdated: z.string(),
+  isOEM: z.boolean(),
+  contractPricing: z.boolean(),
+});
+
+export const checkInventory = ai.defineTool(
+  {
+    name: "checkInventory",
+    description:
+      "Check real-time inventory availability and pricing for a part across all suppliers. " +
+      "Returns stock levels, current unit prices, lead times, and whether the hospital has contract pricing. " +
+      "Call this AFTER identifying the recommended part to give the technician live procurement options.",
+    inputSchema: z.object({
+      partNumber: z
+        .string()
+        .describe("The part number to check inventory for, e.g. 'DRG-8306750'"),
+      partId: z
+        .string()
+        .optional()
+        .describe("The part document ID, e.g. 'part_001'"),
+    }),
+    outputSchema: z.array(InventoryResultSchema),
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+    const snapshot = await db
+      .collection("inventory")
+      .where("partNumber", "==", input.partNumber)
+      .get();
+
+    const results: InventoryRecord[] = snapshot.docs.map(
+      (doc: QueryDocumentSnapshot) => doc.data() as InventoryRecord
+    );
+
+    // Sort by: in-stock first, then by price
+    results.sort((a, b) => {
+      if (a.inStock !== b.inStock) return a.inStock ? -1 : 1;
+      return a.unitPrice - b.unitPrice;
+    });
+
+    const latencyMs = Date.now() - startTime;
+    console.log(`[checkInventory] ${results.length} results for ${input.partNumber} (${latencyMs}ms)`);
+    getActiveCollector()?.recordToolCall("checkInventory", input as Record<string, unknown>, results.length, latencyMs);
+    return results;
+  }
+);
+
+// ---------------------------------------------------------------------------
+// getRepairHistory
+// ---------------------------------------------------------------------------
+
+const WorkOrderSummarySchema = z.object({
+  workOrderId: z.string(),
+  assetId: z.string(),
+  equipmentName: z.string(),
+  createdAt: z.string(),
+  completedAt: z.string().nullable(),
+  status: z.string(),
+  priority: z.string(),
+  diagnosis: z.string(),
+  rootCause: z.string().nullable(),
+  partsUsed: z.array(
+    z.object({
+      partNumber: z.string(),
+      partName: z.string(),
+      quantity: z.number(),
+    })
+  ),
+  laborHours: z.number(),
+  totalCost: z.number(),
+});
+
+export const getRepairHistory = ai.defineTool(
+  {
+    name: "getRepairHistory",
+    description:
+      "Fetch past work orders and repair history for a specific equipment asset or equipment model. " +
+      "Use this to identify recurring failures, past diagnoses, and what parts were previously used. " +
+      "Helps technicians understand if this is a known issue and what worked before.",
+    inputSchema: z.object({
+      assetId: z
+        .string()
+        .optional()
+        .describe("Equipment asset ID, e.g. 'ASSET-4302'"),
+      equipmentName: z
+        .string()
+        .optional()
+        .describe("Equipment model name to find history across all units"),
+      manufacturer: z
+        .string()
+        .optional()
+        .describe("Equipment manufacturer"),
+    }),
+    outputSchema: z.array(WorkOrderSummarySchema),
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+    let query: FirebaseFirestore.Query = db.collection("work_orders");
+
+    if (input.assetId) {
+      query = query.where("assetId", "==", input.assetId);
+    }
+
+    const snapshot = await query.get();
+    let results: WorkOrder[] = snapshot.docs.map(
+      (doc: QueryDocumentSnapshot) => doc.data() as WorkOrder
+    );
+
+    if (input.equipmentName) {
+      const term = input.equipmentName.toLowerCase();
+      results = results.filter((wo) => wo.equipmentName.toLowerCase().includes(term));
+    }
+    if (input.manufacturer) {
+      const term = input.manufacturer.toLowerCase();
+      results = results.filter((wo) => wo.manufacturer.toLowerCase().includes(term));
+    }
+
+    // Sort by most recent first
+    results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Limit to 10 most recent
+    results = results.slice(0, 10);
+
+    const latencyMs = Date.now() - startTime;
+    console.log(`[getRepairHistory] ${results.length} work orders (${latencyMs}ms)`);
+    getActiveCollector()?.recordToolCall("getRepairHistory", input as Record<string, unknown>, results.length, latencyMs);
+    return results;
+  }
+);
+
+// ---------------------------------------------------------------------------
+// createWorkOrder
+// ---------------------------------------------------------------------------
+
+const NewWorkOrderSchema = z.object({
+  workOrderId: z.string(),
+  assetId: z.string(),
+  status: z.string(),
+  priority: z.string(),
+  diagnosis: z.string(),
+  createdAt: z.string(),
+  message: z.string(),
+});
+
+export const createWorkOrder = ai.defineTool(
+  {
+    name: "createWorkOrder",
+    description:
+      "Create a new work order for equipment repair. Pre-fills with the diagnosis, recommended parts, " +
+      "and priority level from the current conversation. " +
+      "Call this when the technician wants to formally document the repair or needs management approval.",
+    inputSchema: z.object({
+      assetId: z
+        .string()
+        .describe("Equipment asset ID, e.g. 'ASSET-4302'"),
+      diagnosis: z
+        .string()
+        .describe("Summary of the diagnosed issue"),
+      priority: z
+        .enum(["emergency", "urgent", "routine", "scheduled"])
+        .describe("Work order priority level"),
+      technicianNotes: z
+        .string()
+        .optional()
+        .describe("Additional notes from the technician"),
+      partNumbers: z
+        .array(z.string())
+        .optional()
+        .describe("Part numbers needed for the repair"),
+    }),
+    outputSchema: NewWorkOrderSchema,
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+
+    // Look up the asset for context
+    const assetDoc = await db.collection("equipment_assets").doc(input.assetId).get();
+    const asset = assetDoc.exists ? (assetDoc.data() as EquipmentAsset) : null;
+
+    const workOrderId = `WO-${Date.now().toString(36).toUpperCase()}`;
+    const now = new Date().toISOString();
+
+    const workOrder: Partial<WorkOrder> = {
+      workOrderId,
+      assetId: input.assetId,
+      equipmentName: asset?.equipmentName ?? "Unknown",
+      manufacturer: asset?.manufacturer ?? "Unknown",
+      department: asset?.department ?? "Unknown",
+      priority: input.priority,
+      status: "open",
+      createdAt: now,
+      completedAt: null,
+      technicianNotes: input.technicianNotes ?? "",
+      diagnosis: input.diagnosis,
+      partsUsed: [],
+      laborHours: 0,
+      totalCost: 0,
+      rootCause: null,
+    };
+
+    await db.collection("work_orders").doc(workOrderId).set(workOrder);
+
+    // Update asset status if it's an emergency/urgent
+    if (asset && (input.priority === "emergency" || input.priority === "urgent")) {
+      await db.collection("equipment_assets").doc(input.assetId).update({ status: "down" });
+    }
+
+    const latencyMs = Date.now() - startTime;
+    console.log(`[createWorkOrder] Created ${workOrderId} (${latencyMs}ms)`);
+    getActiveCollector()?.recordToolCall("createWorkOrder", input as Record<string, unknown>, 1, latencyMs);
+
+    return {
+      workOrderId,
+      assetId: input.assetId,
+      status: "open",
+      priority: input.priority,
+      diagnosis: input.diagnosis,
+      createdAt: now,
+      message: `Work order ${workOrderId} created for ${asset?.equipmentName ?? input.assetId} (${input.priority} priority)`,
+    };
+  }
+);
+
+// ---------------------------------------------------------------------------
+// createOrderRequest
+// ---------------------------------------------------------------------------
+
+const OrderResultSchema = z.object({
+  orderId: z.string(),
+  partNumber: z.string(),
+  partName: z.string(),
+  supplierName: z.string(),
+  quantity: z.number(),
+  unitPrice: z.number(),
+  totalPrice: z.number(),
+  estimatedDelivery: z.string(),
+  status: z.string(),
+  message: z.string(),
+});
+
+export const createOrderRequest = ai.defineTool(
+  {
+    name: "createOrderRequest",
+    description:
+      "Create a purchase order request for a part from a specific supplier. " +
+      "This adds the part to the hospital's procurement queue. " +
+      "Orders above $500 require manager approval and will be marked 'pending_approval'. " +
+      "Call this when the technician confirms they want to order a part.",
+    inputSchema: z.object({
+      partId: z
+        .string()
+        .describe("The part document ID, e.g. 'part_001'"),
+      partNumber: z
+        .string()
+        .describe("The part number, e.g. 'DRG-8306750'"),
+      partName: z
+        .string()
+        .describe("Human-readable part name"),
+      supplierId: z
+        .string()
+        .describe("The supplier ID to order from, e.g. 'sup_001'"),
+      supplierName: z
+        .string()
+        .describe("Human-readable supplier name"),
+      quantity: z
+        .number()
+        .default(1)
+        .describe("Number of units to order"),
+      unitPrice: z
+        .number()
+        .describe("Price per unit from the inventory check"),
+      workOrderId: z
+        .string()
+        .optional()
+        .describe("Associated work order ID, if any"),
+      assetId: z
+        .string()
+        .optional()
+        .describe("Associated equipment asset ID, if any"),
+    }),
+    outputSchema: OrderResultSchema,
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+
+    const orderId = `ORD-${Date.now().toString(36).toUpperCase()}`;
+    const totalPrice = input.unitPrice * input.quantity;
+    const needsApproval = totalPrice > 500;
+    const now = new Date();
+
+    // Estimate delivery: 2-5 business days from now
+    const deliveryDate = new Date(now);
+    deliveryDate.setDate(deliveryDate.getDate() + 3);
+
+    const order: OrderRequest = {
+      orderId,
+      partId: input.partId,
+      partNumber: input.partNumber,
+      partName: input.partName,
+      supplierId: input.supplierId,
+      supplierName: input.supplierName,
+      quantity: input.quantity,
+      unitPrice: input.unitPrice,
+      totalPrice,
+      workOrderId: input.workOrderId ?? null,
+      assetId: input.assetId ?? null,
+      status: needsApproval ? "pending_approval" : "ordered",
+      createdAt: now.toISOString(),
+      estimatedDelivery: deliveryDate.toISOString(),
+      requestedBy: "current_technician",
+    };
+
+    await db.collection("order_requests").doc(orderId).set(order);
+
+    const latencyMs = Date.now() - startTime;
+    console.log(`[createOrderRequest] Created ${orderId} — $${totalPrice} (${latencyMs}ms)`);
+    getActiveCollector()?.recordToolCall("createOrderRequest", input as Record<string, unknown>, 1, latencyMs);
+
+    return {
+      orderId,
+      partNumber: input.partNumber,
+      partName: input.partName,
+      supplierName: input.supplierName,
+      quantity: input.quantity,
+      unitPrice: input.unitPrice,
+      totalPrice,
+      estimatedDelivery: deliveryDate.toISOString().split("T")[0],
+      status: order.status,
+      message: needsApproval
+        ? `Order ${orderId} created for ${input.partName} ($${totalPrice.toFixed(2)}) — pending manager approval (over $500 threshold)`
+        : `Order ${orderId} placed with ${input.supplierName} for ${input.quantity}x ${input.partName} ($${totalPrice.toFixed(2)}) — estimated delivery ${deliveryDate.toISOString().split("T")[0]}`,
     };
   }
 );
