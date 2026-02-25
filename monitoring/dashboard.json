@@ -203,6 +203,210 @@
         "width": 12,
         "height": 4,
         "widget": {
+          "title": "LLM Model Evaluation",
+          "text": {
+            "content": "Token usage, cost tracking, and model comparison metrics. Use these to evaluate model performance over time and make data-driven decisions on model selection.",
+            "format": "MARKDOWN"
+          }
+        }
+      },
+      {
+        "yPos": 32,
+        "width": 4,
+        "height": 4,
+        "widget": {
+          "title": "Total Tokens (24h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/agent_total_tokens\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_SUM"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "xPos": 4,
+        "yPos": 32,
+        "width": 4,
+        "height": 4,
+        "widget": {
+          "title": "Avg Tokens / Request",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/agent_total_tokens\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_MEAN"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "xPos": 8,
+        "yPos": 32,
+        "width": 4,
+        "height": 4,
+        "widget": {
+          "title": "Estimated Cost (24h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/agent_estimated_cost\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_SUM"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "yPos": 36,
+        "width": 6,
+        "height": 8,
+        "widget": {
+          "title": "Token Usage Over Time (Input vs Output)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_input_tokens\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM"
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "legendTemplate": "Input Tokens"
+              },
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_output_tokens\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM"
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "legendTemplate": "Output Tokens"
+              }
+            ],
+            "yAxis": { "label": "Tokens / hour" }
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 36,
+        "width": 6,
+        "height": 8,
+        "widget": {
+          "title": "Estimated Cost Over Time",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_estimated_cost\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "legendTemplate": "Cost (USD)"
+              }
+            ],
+            "yAxis": { "label": "Cost (USD) / hour" }
+          }
+        }
+      },
+      {
+        "yPos": 44,
+        "width": 6,
+        "height": 8,
+        "widget": {
+          "title": "Avg Tokens Per Request",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_input_tokens\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_MEAN"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "legendTemplate": "Avg Input"
+              },
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_output_tokens\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_MEAN"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "legendTemplate": "Avg Output"
+              }
+            ],
+            "yAxis": { "label": "Avg tokens / request" }
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 44,
+        "width": 6,
+        "height": 8,
+        "widget": {
+          "title": "Requests by Model (A/B Comparison)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_request_by_model\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["metric.label.model"]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR"
+              }
+            ],
+            "yAxis": { "label": "Requests / hour" }
+          }
+        }
+      },
+      {
+        "yPos": 52,
+        "width": 12,
+        "height": 4,
+        "widget": {
           "title": "Recent Agent Logs",
           "logsPanel": {
             "filter": "jsonPayload.message=\"agent_request_complete\" OR jsonPayload.message=\"user_feedback\"",

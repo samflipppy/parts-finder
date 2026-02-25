@@ -164,11 +164,7 @@ export const searchParts = ai.defineTool(
     if (input.category) {
       filterSteps.push({ filter: "category", value: input.category, remaining: results.length });
     }
-
     if (input.manufacturer) {
-      // Case-insensitive fallback for data that may not match exactly
-      const searchTerm = input.manufacturer.toLowerCase();
-      results = results.filter((part) => part.manufacturer.toLowerCase() === searchTerm);
       filterSteps.push({ filter: "manufacturer", value: input.manufacturer, remaining: results.length });
     }
 
@@ -318,7 +314,13 @@ export const searchManual = ai.defineTool(
     const db = getFirestore();
     console.log("[searchManual] Query params:", JSON.stringify(input));
 
-    const embSnap = await db.collection("section_embeddings").get();
+    // Push manufacturer filter to Firestore to avoid loading all embeddings
+    let embQuery: FirebaseFirestore.Query = db.collection("section_embeddings");
+    if (input.manufacturer) {
+      embQuery = embQuery.where("manufacturer", "==", input.manufacturer);
+    }
+
+    const embSnap = await embQuery.get();
     const allEmbeddings = embSnap.docs.map(
       (doc: QueryDocumentSnapshot) => doc.data() as SectionEmbedding
     );
@@ -327,10 +329,7 @@ export const searchManual = ai.defineTool(
     let candidates = useVectorSearch ? allEmbeddings : [];
 
     if (useVectorSearch) {
-      if (input.manufacturer) {
-        const term = input.manufacturer.toLowerCase();
-        candidates = candidates.filter((e) => e.manufacturer.toLowerCase() === term);
-      }
+      // manufacturer already filtered server-side; only equipmentName needs client-side (substring match)
       if (input.equipmentName) {
         const term = input.equipmentName.toLowerCase();
         candidates = candidates.filter((e) => e.equipmentName.toLowerCase().includes(term));
@@ -398,15 +397,16 @@ export const searchManual = ai.defineTool(
 
     console.log("[searchManual] Using keyword fallback search");
 
-    const manualSnap = await db.collection("service_manuals").get();
+    // Push manufacturer filter to Firestore to avoid loading all manuals
+    let manualQuery: FirebaseFirestore.Query = db.collection("service_manuals");
+    if (input.manufacturer) {
+      manualQuery = manualQuery.where("manufacturer", "==", input.manufacturer);
+    }
+
+    const manualSnap = await manualQuery.get();
     let manuals: ServiceManual[] = manualSnap.docs.map(
       (doc: QueryDocumentSnapshot) => doc.data() as ServiceManual
     );
-
-    if (input.manufacturer) {
-      const term = input.manufacturer.toLowerCase();
-      manuals = manuals.filter((m) => m.manufacturer.toLowerCase() === term);
-    }
 
     if (input.equipmentName) {
       const term = input.equipmentName.toLowerCase();
@@ -500,19 +500,22 @@ export const listManualSections = ai.defineTool(
   async (input) => {
     const startTime = Date.now();
     const db = getFirestore();
-    const snapshot = await db.collection("service_manuals").get();
+
+    // Push manufacturer filter to Firestore to avoid loading all manuals
+    const snapshot = await db.collection("service_manuals")
+      .where("manufacturer", "==", input.manufacturer)
+      .get();
     const manuals = snapshot.docs.map(
       (doc: QueryDocumentSnapshot) => doc.data() as ServiceManual
     );
 
-    const mfgTerm = input.manufacturer.toLowerCase();
+    // equipmentName needs client-side filter (substring/compatible model matching)
     const eqTerm = input.equipmentName.toLowerCase();
 
     const manual = manuals.find(
       (m) =>
-        m.manufacturer.toLowerCase() === mfgTerm &&
-        (m.equipmentName.toLowerCase().includes(eqTerm) ||
-          m.compatibleModels.some((cm) => cm.toLowerCase().includes(eqTerm)))
+        m.equipmentName.toLowerCase().includes(eqTerm) ||
+        m.compatibleModels.some((cm) => cm.toLowerCase().includes(eqTerm))
     );
 
     const latencyMs = Date.now() - startTime;
@@ -652,15 +655,22 @@ export const lookupAsset = ai.defineTool(
   async (input) => {
     const startTime = Date.now();
     const db = getFirestore();
-    const snapshot = await db.collection("equipment_assets").get();
+
+    // Push exact-match filters to Firestore where possible
+    let assetQuery: FirebaseFirestore.Query = db.collection("equipment_assets");
+    if (input.assetTag) {
+      assetQuery = assetQuery.where("assetTag", "==", input.assetTag);
+    }
+    if (input.department) {
+      assetQuery = assetQuery.where("department", "==", input.department);
+    }
+
+    const snapshot = await assetQuery.get();
     let results: EquipmentAsset[] = snapshot.docs.map(
       (doc: QueryDocumentSnapshot) => doc.data() as EquipmentAsset
     );
 
-    if (input.assetTag) {
-      const term = input.assetTag.toUpperCase();
-      results = results.filter((a) => a.assetTag.toUpperCase().includes(term));
-    }
+    // Remaining filters need client-side matching (substring/case-insensitive)
     if (input.serialNumber) {
       const term = input.serialNumber.toUpperCase();
       results = results.filter((a) => a.serialNumber.toUpperCase().includes(term));
@@ -668,10 +678,6 @@ export const lookupAsset = ai.defineTool(
     if (input.equipmentName) {
       const term = input.equipmentName.toLowerCase();
       results = results.filter((a) => a.equipmentName.toLowerCase().includes(term));
-    }
-    if (input.department) {
-      const term = input.department.toLowerCase();
-      results = results.filter((a) => a.department.toLowerCase().includes(term));
     }
 
     const latencyMs = Date.now() - startTime;
@@ -738,11 +744,21 @@ export const getRepairHistory = ai.defineTool(
       query = query.where("assetId", "==", input.assetId);
     }
 
+    // Push sorting to Firestore
+    query = query.orderBy("createdAt", "desc");
+
+    // Only push limit to Firestore when no client-side filters will run after
+    const needsClientFilter = !!(input.equipmentName || input.manufacturer);
+    if (!needsClientFilter) {
+      query = query.limit(10);
+    }
+
     const snapshot = await query.get();
     let results: WorkOrder[] = snapshot.docs.map(
       (doc: QueryDocumentSnapshot) => doc.data() as WorkOrder
     );
 
+    // Substring filters must stay client-side
     if (input.equipmentName) {
       const term = input.equipmentName.toLowerCase();
       results = results.filter((wo) => wo.equipmentName.toLowerCase().includes(term));
@@ -752,11 +768,10 @@ export const getRepairHistory = ai.defineTool(
       results = results.filter((wo) => wo.manufacturer.toLowerCase().includes(term));
     }
 
-    // Sort by most recent first
-    results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    // Limit to 10 most recent
-    results = results.slice(0, 10);
+    // Limit to 10 most recent (already sorted server-side)
+    if (needsClientFilter) {
+      results = results.slice(0, 10);
+    }
 
     const latencyMs = Date.now() - startTime;
     console.log(`[getRepairHistory] ${results.length} work orders (${latencyMs}ms)`);

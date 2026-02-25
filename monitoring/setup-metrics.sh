@@ -58,6 +58,77 @@ gcloud logging metrics create agent_error_count \
   --log-filter='resource.type="cloud_function" severity>=ERROR' \
   2>/dev/null || echo "  agent_error_count already exists"
 
+# Metric: Total tokens per request (distribution — extracts numeric value from log)
+cat > /tmp/metric_total_tokens.json << 'METRIC_EOF'
+{
+  "name": "agent_total_tokens",
+  "description": "Total LLM tokens (input+output) per agent request",
+  "filter": "jsonPayload.message=\"agent_request_complete\"",
+  "metricDescriptor": { "metricKind": "DELTA", "valueType": "DISTRIBUTION" },
+  "valueExtractor": "EXTRACT(jsonPayload.agent.totalTokens)",
+  "bucketOptions": { "exponentialBuckets": { "numFiniteBuckets": 12, "growthFactor": 2, "scale": 50 } }
+}
+METRIC_EOF
+gcloud logging metrics create agent_total_tokens --config-from-file=/tmp/metric_total_tokens.json \
+  2>/dev/null || echo "  agent_total_tokens already exists"
+
+# Metric: Input tokens per request (distribution)
+cat > /tmp/metric_input_tokens.json << 'METRIC_EOF'
+{
+  "name": "agent_input_tokens",
+  "description": "LLM input (prompt) tokens per agent request",
+  "filter": "jsonPayload.message=\"agent_request_complete\"",
+  "metricDescriptor": { "metricKind": "DELTA", "valueType": "DISTRIBUTION" },
+  "valueExtractor": "EXTRACT(jsonPayload.agent.totalInputTokens)",
+  "bucketOptions": { "exponentialBuckets": { "numFiniteBuckets": 12, "growthFactor": 2, "scale": 50 } }
+}
+METRIC_EOF
+gcloud logging metrics create agent_input_tokens --config-from-file=/tmp/metric_input_tokens.json \
+  2>/dev/null || echo "  agent_input_tokens already exists"
+
+# Metric: Output tokens per request (distribution)
+cat > /tmp/metric_output_tokens.json << 'METRIC_EOF'
+{
+  "name": "agent_output_tokens",
+  "description": "LLM output (completion) tokens per agent request",
+  "filter": "jsonPayload.message=\"agent_request_complete\"",
+  "metricDescriptor": { "metricKind": "DELTA", "valueType": "DISTRIBUTION" },
+  "valueExtractor": "EXTRACT(jsonPayload.agent.totalOutputTokens)",
+  "bucketOptions": { "exponentialBuckets": { "numFiniteBuckets": 12, "growthFactor": 2, "scale": 50 } }
+}
+METRIC_EOF
+gcloud logging metrics create agent_output_tokens --config-from-file=/tmp/metric_output_tokens.json \
+  2>/dev/null || echo "  agent_output_tokens already exists"
+
+# Metric: Estimated cost per request in USD (distribution)
+cat > /tmp/metric_estimated_cost.json << 'METRIC_EOF'
+{
+  "name": "agent_estimated_cost",
+  "description": "Estimated LLM cost in USD per agent request",
+  "filter": "jsonPayload.message=\"agent_request_complete\"",
+  "metricDescriptor": { "metricKind": "DELTA", "valueType": "DISTRIBUTION" },
+  "valueExtractor": "EXTRACT(jsonPayload.agent.estimatedCostUsd)",
+  "bucketOptions": { "explicitBuckets": { "bounds": [0, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1] } }
+}
+METRIC_EOF
+gcloud logging metrics create agent_estimated_cost --config-from-file=/tmp/metric_estimated_cost.json \
+  2>/dev/null || echo "  agent_estimated_cost already exists"
+
+# Metric: Agent requests by model (counter with model label for A/B comparison)
+cat > /tmp/metric_request_by_model.json << 'METRIC_EOF'
+{
+  "name": "agent_request_by_model",
+  "description": "Agent request count by LLM model — for model comparison over time",
+  "filter": "jsonPayload.message=\"agent_request_complete\"",
+  "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64" },
+  "labelExtractors": { "model": "EXTRACT(jsonPayload.agent.model)" }
+}
+METRIC_EOF
+gcloud logging metrics create agent_request_by_model --config-from-file=/tmp/metric_request_by_model.json \
+  2>/dev/null || echo "  agent_request_by_model already exists"
+
+rm -f /tmp/metric_*.json
+
 echo "Log-based metrics created."
 
 # ---------------------------------------------------------------------------

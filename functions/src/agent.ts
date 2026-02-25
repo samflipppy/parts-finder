@@ -13,6 +13,7 @@ import {
 import {
   MetricsCollector,
   setActiveCollector,
+  getActiveCollector,
   saveMetrics,
 } from "./metrics";
 
@@ -183,12 +184,21 @@ export const diagnosticPartnerChat = ai.defineFlow(
 
     try {
       // ── Step 1: Extract structured params from the user message ──
+      const extractionStart = Date.now();
       const extraction = await ai.generate({
         system: EXTRACTION_PROMPT,
         messages: genkitHistory,
         prompt: currentMessage.content,
         output: { schema: ExtractionSchema },
       });
+
+      getActiveCollector()?.recordLLMCall(
+        "extraction",
+        extraction.model ?? "vertexai/gemini-2.0-flash",
+        extraction.usage?.inputTokens ?? 0,
+        extraction.usage?.outputTokens ?? 0,
+        Date.now() - extractionStart
+      );
 
       const params: ExtractionResult | null = extraction.output;
 
@@ -283,12 +293,21 @@ export const diagnosticPartnerChat = ai.defineFlow(
         repairHistory: Array.isArray(repairHistory) ? repairHistory : [],
       };
 
+      const formattingStart = Date.now();
       const formatted = await ai.generate({
         system: FORMATTING_PROMPT,
         messages: genkitHistory,
         prompt: `Technician asked: "${currentMessage.content}"\n\nTool results:\n${JSON.stringify(toolData, null, 2)}`,
         output: { schema: ChatAgentResponseSchema },
       });
+
+      getActiveCollector()?.recordLLMCall(
+        "formatting",
+        formatted.model ?? "vertexai/gemini-2.0-flash",
+        formatted.usage?.inputTokens ?? 0,
+        formatted.usage?.outputTokens ?? 0,
+        Date.now() - formattingStart
+      );
 
       const result = formatted.output;
 
