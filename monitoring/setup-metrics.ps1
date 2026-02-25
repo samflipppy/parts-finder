@@ -201,7 +201,14 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dashboardJson = (Get-Content -Path (Join-Path $scriptDir "dashboard.json") -Raw) -replace '\$\{PROJECT_ID\}', $PROJECT_ID
 
 # Check if dashboard exists
-$existing = gcloud monitoring dashboards list --format="value(name)" --filter="displayName='PartsFinder Agent Health'" 2>$null
+try {
+    $existing = gcloud monitoring dashboards list --format="value(name)" --filter="displayName='PartsFinder Agent Health'" 2>&1 |
+        Where-Object { $_ -is [string] -or $_ -notmatch 'WARNING' }
+    if ($existing) { $existing = ($existing | Out-String).Trim() }
+    if (-not $existing) { $existing = $null }
+} catch {
+    $existing = $null
+}
 
 if ($existing) {
     Write-Host "  Dashboard already exists. Updating..."
