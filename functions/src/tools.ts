@@ -185,12 +185,17 @@ export const searchParts = ai.defineTool(
     }
 
     if (input.symptom) {
-      const searchTerm = input.symptom.toLowerCase();
-      results = results.filter(
-        (part) =>
-          part.description.toLowerCase().includes(searchTerm) ||
-          part.name.toLowerCase().includes(searchTerm)
+      const words = input.symptom.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+      const filtered = results.filter(
+        (part) => {
+          const haystack = (part.description + " " + part.name).toLowerCase();
+          return words.some((w) => haystack.includes(w));
+        }
       );
+      // Only apply symptom filter if it doesn't eliminate all previous matches
+      if (filtered.length > 0) {
+        results = filtered;
+      }
       filterSteps.push({ filter: "symptom", value: input.symptom, remaining: results.length });
     }
 

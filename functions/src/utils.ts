@@ -45,12 +45,16 @@ export function filterParts(
     );
   }
   if (input.symptom) {
-    const term = input.symptom.toLowerCase();
-    results = results.filter(
-      (p) =>
-        p.description.toLowerCase().includes(term) ||
-        p.name.toLowerCase().includes(term)
+    const words = input.symptom.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+    const filtered = results.filter(
+      (p) => {
+        const haystack = (p.description + " " + p.name).toLowerCase();
+        return words.some((w) => haystack.includes(w));
+      }
     );
+    if (filtered.length > 0) {
+      results = filtered;
+    }
   }
 
   return results;
