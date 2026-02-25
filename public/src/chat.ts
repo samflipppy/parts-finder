@@ -270,18 +270,26 @@ function showPasswordGate(): void {
       // Password accepted (or no password required)
       setStoredPassword(pw);
       overlay.remove();
+      chatInput.disabled = false;
+      sendBtn.disabled = false;
+      chatInput.focus();
     }).catch(() => {
       errorEl.textContent = "Connection error. Try again.";
     });
   });
 }
 
-// Check auth on load — if no stored password, probe the API
+// Check auth on load — block UI until resolved
 function initAuth(): void {
   const stored = getStoredPassword();
   if (stored !== null) return; // already authenticated this session
 
-  // Probe the API to see if a password is required
+  // Block the UI while we check — disable input until auth resolves
+  chatInput.disabled = true;
+  sendBtn.disabled = true;
+
+  // Use HEAD-like probe: still POST (required by the endpoint) but the
+  // 401 check happens before the LLM is invoked, so no wasted calls.
   fetch(STREAM_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -292,6 +300,9 @@ function initAuth(): void {
     } else {
       // No password required — store empty marker so we don't re-check
       setStoredPassword("");
+      chatInput.disabled = false;
+      sendBtn.disabled = false;
+      chatInput.focus();
     }
   }).catch(() => {
     // Backend unreachable — show gate so user can enter password for when it's up
