@@ -206,7 +206,7 @@
           "title": "Recent Agent Logs",
           "logsPanel": {
             "filter": "jsonPayload.message=\"agent_request_complete\" OR jsonPayload.message=\"user_feedback\"",
-            "resourceNames": ["projects/${PROJECT_ID}"]
+            "resourceNames": ["projects/680521534579"]
           }
         }
       }
