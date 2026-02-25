@@ -1,8 +1,8 @@
 import { z } from "genkit";
 import { SpanStatusCode } from "@opentelemetry/api";
 import type { AgentResponse, ChatMessage, ChatAgentResponse } from "./types";
-import { ai, tracer, generateWithRetry } from "./ai";
-import { RESEARCH_PROMPT, STRUCTURE_PROMPT } from "./prompts";
+import { ai, tracer } from "./ai";
+import { SYSTEM_PROMPT } from "./prompts";
 import {
   listManualSections,
   searchManual,
@@ -10,13 +10,14 @@ import {
   searchParts,
   getSuppliers,
   getRepairGuide,
+  lookupAsset,
+  getRepairHistory,
 } from "./tools";
 import {
   MetricsCollector,
   setActiveCollector,
   setActiveChunkEmitter,
   saveMetrics,
-  type RequestMetrics,
   type StreamChunk,
 } from "./metrics";
 
@@ -32,7 +33,7 @@ const ManualReferenceSchema = z.object({
   pageHint: z.string().nullable().optional(),
 });
 
-const ChatAgentResponseSchema = z.object({
+export const ChatAgentResponseSchema = z.object({
   type: z.enum(["diagnosis", "clarification", "guidance", "photo_analysis"]),
   message: z.string(),
   manualReferences: z.array(ManualReferenceSchema),
@@ -74,16 +75,47 @@ const ChatAgentResponseSchema = z.object({
   confidence: z.enum(["high", "medium", "low"]).nullable(),
   reasoning: z.string().nullable(),
   warnings: z.array(z.string()),
+  equipmentAsset: z
+    .object({
+      assetId: z.string(),
+      assetTag: z.string(),
+      department: z.string(),
+      location: z.string(),
+      hoursLogged: z.number(),
+      warrantyExpiry: z.string(),
+      status: z.string(),
+    })
+    .nullable(),
 });
 
 const StreamChunkSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("tool_done"), toolName: z.string(), resultCount: z.number(), latencyMs: z.number() }),
   z.object({ type: z.literal("text_chunk"), text: z.string() }),
-  z.object({ type: z.literal("phase_structuring") }),
 ]);
 
+// All tools available to the agent
+const ALL_TOOLS = [
+  listManualSections,
+  searchManual,
+  getManualSection,
+  searchParts,
+  getSuppliers,
+  getRepairGuide,
+  lookupAsset,
+  getRepairHistory,
+];
+
+// Default empty business fields for error/fallback responses
+const EMPTY_BUSINESS_FIELDS = {
+  equipmentAsset: null,
+};
+
 // ---------------------------------------------------------------------------
-// diagnosticPartnerChat flow
+// diagnosticPartnerChat — single-phase flow
+//
+// One generateStream call with tools + structured output.
+// The model calls tools, then returns structured JSON.
+// Tool progress streams via sendChunk (from MetricsCollector).
 // ---------------------------------------------------------------------------
 
 export const diagnosticPartnerChat = ai.defineFlow(
@@ -102,7 +134,7 @@ export const diagnosticPartnerChat = ai.defineFlow(
   },
   async (input, { sendChunk }): Promise<ChatAgentResponse> => {
     setActiveChunkEmitter(sendChunk as (chunk: StreamChunk) => void);
-    console.log(`[diagnosticPartnerChat] Processing ${input.messages.length} messages`);
+    console.log(`[agent] Processing ${input.messages.length} messages`);
 
     const history = input.messages.slice(0, -1);
     const currentMessage = input.messages[input.messages.length - 1];
@@ -112,41 +144,73 @@ export const diagnosticPartnerChat = ai.defineFlow(
       content: [{ text: msg.content }],
     }));
 
-    const phase1Opts: Parameters<typeof ai.generate>[0] = {
-      system: RESEARCH_PROMPT,
-      messages: genkitHistory,
-      prompt: currentMessage.content,
-      tools: [listManualSections, searchManual, getManualSection, searchParts, getSuppliers, getRepairGuide],
-      maxTurns: 12,
-    };
-
-    let phase1Text: string;
-    const phase1Span = tracer.startSpan("phase1.research", {
-      attributes: {
-        "messages.count": input.messages.length,
-      },
+    const span = tracer.startSpan("agent.generate", {
+      attributes: { "messages.count": input.messages.length },
     });
+
     try {
-      const { response: phase1Promise, stream: phase1Stream } = ai.generateStream(phase1Opts);
-      for await (const chunk of phase1Stream) {
+      const { response: responsePromise, stream } = ai.generateStream({
+        system: SYSTEM_PROMPT,
+        messages: genkitHistory,
+        prompt: currentMessage.content,
+        tools: ALL_TOOLS,
+        output: { schema: ChatAgentResponseSchema },
+        maxTurns: 15,
+      });
+
+      // Stream text chunks as they arrive (tool-calling turns produce planning text)
+      for await (const chunk of stream) {
         if (chunk.text) {
           sendChunk({ type: "text_chunk", text: chunk.text });
         }
       }
-      const phase1Response = await phase1Promise;
-      phase1Text = phase1Response.text;
-      phase1Span.setAttribute("response.chars", phase1Text.length);
-      phase1Span.setStatus({ code: SpanStatusCode.OK });
-      console.log(`[diagnosticPartnerChat] Phase 1 complete — ${phase1Text.length} chars`);
-      console.log(`[diagnosticPartnerChat] Phase 1 preview: ${phase1Text.substring(0, 600)}`);
-    } catch (genErr: unknown) {
-      const msg = genErr instanceof Error ? genErr.message : String(genErr);
-      phase1Span.recordException(new Error(msg));
-      phase1Span.setStatus({ code: SpanStatusCode.ERROR, message: msg });
-      console.error("[diagnosticPartnerChat] Phase 1 failed:", msg);
+
+      const response = await responsePromise;
+      const result = response.output;
+
+      if (!result) {
+        // Model didn't produce valid structured output — fall back to raw text
+        const rawText = response.text;
+        console.warn(`[agent] Structured output was null, falling back to raw text (${rawText.length} chars)`);
+        span.setStatus({ code: SpanStatusCode.OK });
+        setActiveChunkEmitter(null);
+        return {
+          type: "guidance",
+          message: rawText || "I wasn't able to structure my response. Please try again.",
+          manualReferences: [],
+          diagnosis: null,
+          recommendedPart: null,
+          repairGuide: null,
+          supplierRanking: [],
+          alternativeParts: [],
+          confidence: "medium",
+          reasoning: "Structured output was null; returning raw text.",
+          warnings: [],
+          ...EMPTY_BUSINESS_FIELDS,
+        };
+      }
+
+      span.setAttributes({
+        "response.type": result.type,
+        "part.found": !!(result.recommendedPart),
+        "confidence": result.confidence ?? "null",
+      });
+      span.setStatus({ code: SpanStatusCode.OK });
+      console.log(
+        `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}`
+      );
+
+      setActiveChunkEmitter(null);
+      return result;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      span.recordException(new Error(msg));
+      span.setStatus({ code: SpanStatusCode.ERROR, message: msg });
+      console.error("[agent] Failed:", msg);
+
       const isRateLimit = msg.includes("429") || msg.toLowerCase().includes("resource exhausted");
       setActiveChunkEmitter(null);
-      phase1Span.end();
+
       return {
         type: "clarification",
         message: isRateLimit
@@ -159,116 +223,18 @@ export const diagnosticPartnerChat = ai.defineFlow(
         supplierRanking: [],
         alternativeParts: [],
         confidence: null,
-        reasoning: `Phase 1 generation failed: ${msg}`,
+        reasoning: `Generation failed: ${msg}`,
         warnings: [],
+        ...EMPTY_BUSINESS_FIELDS,
       };
     } finally {
-      phase1Span.end();
+      span.end();
     }
-
-    sendChunk({ type: "phase_structuring" });
-
-    let result: ChatAgentResponse | null = null;
-    const phase2Span = tracer.startSpan("phase2.structure");
-    try {
-      const phase2Response = await generateWithRetry(() =>
-        ai.generate({
-          system: STRUCTURE_PROMPT,
-          prompt: `Convert this repair research into the JSON schema:\n\n${phase1Text}`,
-          output: { schema: ChatAgentResponseSchema },
-        })
-      );
-      result = phase2Response.output ?? null;
-      phase2Span.setAttributes({
-        "response.type": result?.type ?? "null",
-        "part.found": !!(result?.recommendedPart),
-        "confidence": result?.confidence ?? "null",
-        "manual.refs": result?.manualReferences?.length ?? 0,
-      });
-      phase2Span.setStatus({ code: SpanStatusCode.OK });
-      console.log(
-        `[diagnosticPartnerChat] Phase 2 complete — type: ${result?.type}, refs: ${result?.manualReferences?.length ?? 0}, part: ${result?.recommendedPart?.partNumber ?? "none"}`
-      );
-    } catch (structErr: unknown) {
-      const msg = structErr instanceof Error ? structErr.message : String(structErr);
-      phase2Span.recordException(new Error(msg));
-      phase2Span.setStatus({ code: SpanStatusCode.ERROR, message: msg });
-      console.error("[diagnosticPartnerChat] Phase 2 failed:", msg);
-      setActiveChunkEmitter(null);
-      phase2Span.end();
-      return {
-        type: "guidance",
-        message: phase1Text,
-        manualReferences: [],
-        diagnosis: null,
-        recommendedPart: null,
-        repairGuide: null,
-        supplierRanking: [],
-        alternativeParts: [],
-        confidence: "medium",
-        reasoning: `Structured formatting failed: ${msg}`,
-        warnings: [],
-      };
-    } finally {
-      phase2Span.end();
-    }
-
-    setActiveChunkEmitter(null);
-
-    if (!result) {
-      console.error("[diagnosticPartnerChat] Phase 2 returned null output, falling back to Phase 1 text");
-      return {
-        type: "guidance",
-        message: phase1Text,
-        manualReferences: [],
-        diagnosis: null,
-        recommendedPart: null,
-        repairGuide: null,
-        supplierRanking: [],
-        alternativeParts: [],
-        confidence: "medium",
-        reasoning: "Structured output was null; returning raw research text.",
-        warnings: [],
-      };
-    }
-
-    return result;
   }
 );
 
 // ---------------------------------------------------------------------------
-// chatWithMetrics
-// ---------------------------------------------------------------------------
-
-export async function chatWithMetrics(
-  messages: ChatMessage[]
-): Promise<{ response: ChatAgentResponse; metrics: RequestMetrics }> {
-  const collector = new MetricsCollector();
-  setActiveCollector(collector);
-
-  try {
-    const response = await diagnosticPartnerChat({ messages });
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
-    const pseudoResponse: AgentResponse = {
-      diagnosis: response.diagnosis ?? response.message,
-      recommendedPart: response.recommendedPart,
-      repairGuide: response.repairGuide,
-      supplierRanking: response.supplierRanking,
-      alternativeParts: response.alternativeParts,
-      confidence: response.confidence ?? "medium",
-      reasoning: response.reasoning ?? "",
-      warnings: response.warnings,
-    };
-    const metrics = collector.finalize(lastUserMsg, pseudoResponse);
-    saveMetrics(metrics).catch((err) => console.error("[chatWithMetrics] Failed to save metrics:", err));
-    return { response, metrics };
-  } finally {
-    setActiveCollector(null);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// chatStreamWithMetrics
+// chatStreamWithMetrics — the only way to call the agent
 // ---------------------------------------------------------------------------
 
 export async function* chatStreamWithMetrics(messages: ChatMessage[]) {
@@ -295,7 +261,7 @@ export async function* chatStreamWithMetrics(messages: ChatMessage[]) {
       warnings: response.warnings,
     };
     const metrics = collector.finalize(lastUserMsg, pseudoResponse);
-    saveMetrics(metrics).catch((err) => console.error("[chatStreamWithMetrics] Failed to save metrics:", err));
+    saveMetrics(metrics).catch((err) => console.error("[agent] Failed to save metrics:", err));
 
     yield { type: "complete" as const, response: { ...response, _metrics: metrics } };
   } finally {

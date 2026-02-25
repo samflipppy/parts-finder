@@ -1,7 +1,8 @@
 import { initializeApp } from "firebase-admin/app";
 import { onRequest } from "firebase-functions/v2/https";
+import { defineString } from "firebase-functions/params";
 import { flushTracing } from "genkit/tracing";
-import { chatWithMetrics, chatStreamWithMetrics } from "./agent";
+import { chatStreamWithMetrics } from "./agent";
 import { getRecentMetrics, aggregateMetrics } from "./metrics";
 import { validateChatRequest } from "./validation";
 import type { ChatMessage } from "./types";
@@ -12,6 +13,21 @@ export type { ValidationResult } from "./validation";
 
 // Initialize Firebase Admin SDK (once, at cold start)
 initializeApp();
+
+// ---------------------------------------------------------------------------
+// Demo password (set via firebase functions:config or .env)
+// ---------------------------------------------------------------------------
+
+const DEMO_PASSWORD = defineString("DEMO_PASSWORD", { default: "" });
+
+function checkDemoAuth(req: { headers: Record<string, unknown> }, res: { status: (code: number) => { json: (body: object) => void } }): boolean {
+  const password = DEMO_PASSWORD.value();
+  if (!password) return true; // no password configured → open access
+  const provided = req.headers["x-demo-password"] as string | undefined;
+  if (provided === password) return true;
+  res.status(401).json({ error: "Invalid or missing demo password." });
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Simple in-memory rate limiter (per Cloud Functions instance)
@@ -36,15 +52,16 @@ function isRateLimited(ip: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/chat
+// POST /api/chat  (SSE streaming — single endpoint)
 // ---------------------------------------------------------------------------
 
 /**
  * POST /api/chat
  *
- * Diagnostic Partner endpoint. Accepts a conversation history
- * (multi-turn messages) and returns a ChatAgentResponse with
- * manual references, diagnosis, and guidance.
+ * Single streaming endpoint. Returns text/event-stream with:
+ *   - tool_done events as each tool completes
+ *   - text_chunk events during generation
+ *   - complete event with the full structured ChatAgentResponse + metrics
  */
 export const chat = onRequest(
   { cors: true, timeoutSeconds: 300 },
@@ -53,6 +70,8 @@ export const chat = onRequest(
       res.status(405).json({ error: "Method not allowed. Use POST." });
       return;
     }
+
+    if (!checkDemoAuth(req, res)) return;
 
     const clientIp = req.ip || "unknown";
     if (isRateLimited(clientIp)) {
@@ -68,62 +87,7 @@ export const chat = onRequest(
 
     const messages = req.body.messages as ChatMessage[];
     const lastMsg = messages[messages.length - 1].content;
-    console.log(
-      `[chat] Received ${messages.length} messages, latest: "${lastMsg.substring(0, 100)}..."`
-    );
-
-    try {
-      const { response, metrics } = await chatWithMetrics(messages);
-      console.log(
-        `[chat] Completed — type: ${response.type}, refs: ${response.manualReferences.length}, ` +
-          `latency: ${metrics.totalLatencyMs}ms, tools: ${metrics.totalToolCalls}`
-      );
-      res.status(200).json({ ...response, _metrics: metrics });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      console.error("[chat] Error:", message);
-      res.status(500).json({
-        error: "Failed to process chat request.",
-        detail: message,
-      });
-    } finally {
-      await flushTracing();
-    }
-  }
-);
-
-// ---------------------------------------------------------------------------
-// POST /api/chatStream
-// ---------------------------------------------------------------------------
-
-/**
- * POST /api/chatStream
- *
- * Streaming version of the chat endpoint. Returns a text/event-stream response
- * with tool_done and phase_structuring events during execution, followed by a
- * complete event containing the full ChatAgentResponse.
- */
-export const chatStream = onRequest(
-  { cors: true, timeoutSeconds: 300 },
-  async (req, res) => {
-    if (req.method !== "POST") {
-      res.status(405).json({ error: "Method not allowed. Use POST." });
-      return;
-    }
-
-    const clientIp = req.ip || "unknown";
-    if (isRateLimited(clientIp)) {
-      res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
-      return;
-    }
-
-    const validation = validateChatRequest(req.body);
-    if (!validation.valid) {
-      res.status(validation.status!).json({ error: validation.error });
-      return;
-    }
-
-    const messages = req.body.messages as ChatMessage[];
+    console.log(`[chat] ${messages.length} messages, latest: "${lastMsg.substring(0, 100)}"`);
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -139,7 +103,7 @@ export const chatStream = onRequest(
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      console.error("[chatStream] Error:", message);
+      console.error("[chat] Error:", message);
       write({ type: "error", message });
     } finally {
       res.end();
@@ -165,6 +129,8 @@ export const metrics = onRequest(
       res.status(405).json({ error: "Method not allowed. Use GET." });
       return;
     }
+
+    if (!checkDemoAuth(req, res)) return;
 
     try {
       const limit = Math.min(

@@ -4,7 +4,7 @@ import { trace } from "@opentelemetry/api";
 import { ai } from "./ai";
 import { getActiveCollector, type FilterStep, type RAGTraceData } from "./metrics";
 import { cosineSimilarity } from "./utils";
-import type { Part, Supplier, RepairGuide, ServiceManual, SectionEmbedding } from "./types";
+import type { Part, Supplier, RepairGuide, ServiceManual, SectionEmbedding, EquipmentAsset, WorkOrder } from "./types";
 
 // Re-export for external consumers
 export { cosineSimilarity, filterParts } from "./utils";
@@ -601,3 +601,167 @@ export const getManualSection = ai.defineTool(
     };
   }
 );
+
+// ---------------------------------------------------------------------------
+// lookupAsset
+// ---------------------------------------------------------------------------
+
+const AssetSchema = z.object({
+  assetId: z.string(),
+  assetTag: z.string(),
+  equipmentName: z.string(),
+  manufacturer: z.string(),
+  serialNumber: z.string(),
+  department: z.string(),
+  location: z.string(),
+  installDate: z.string(),
+  warrantyExpiry: z.string(),
+  hoursLogged: z.number(),
+  status: z.enum(["active", "down", "maintenance", "retired"]),
+  lastPmDate: z.string(),
+  nextPmDue: z.string(),
+});
+
+export const lookupAsset = ai.defineTool(
+  {
+    name: "lookupAsset",
+    description:
+      "Look up a hospital equipment asset by asset tag, serial number, or equipment name + department. " +
+      "Returns the asset record including location, operating hours, warranty status, and maintenance schedule. " +
+      "Call this when the technician identifies a specific unit (e.g. 'unit 4302 in ICU' or 'serial SN-V500-2847').",
+    inputSchema: z.object({
+      assetTag: z
+        .string()
+        .optional()
+        .describe("Physical asset tag on the unit, e.g. 'ASSET-4302'"),
+      serialNumber: z
+        .string()
+        .optional()
+        .describe("Equipment serial number, e.g. 'SN-V500-2847'"),
+      equipmentName: z
+        .string()
+        .optional()
+        .describe("Equipment model name, e.g. 'Evita V500'"),
+      department: z
+        .string()
+        .optional()
+        .describe("Hospital department, e.g. 'ICU-3', 'OR-7'"),
+    }),
+    outputSchema: z.array(AssetSchema),
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+    const snapshot = await db.collection("equipment_assets").get();
+    let results: EquipmentAsset[] = snapshot.docs.map(
+      (doc: QueryDocumentSnapshot) => doc.data() as EquipmentAsset
+    );
+
+    if (input.assetTag) {
+      const term = input.assetTag.toUpperCase();
+      results = results.filter((a) => a.assetTag.toUpperCase().includes(term));
+    }
+    if (input.serialNumber) {
+      const term = input.serialNumber.toUpperCase();
+      results = results.filter((a) => a.serialNumber.toUpperCase().includes(term));
+    }
+    if (input.equipmentName) {
+      const term = input.equipmentName.toLowerCase();
+      results = results.filter((a) => a.equipmentName.toLowerCase().includes(term));
+    }
+    if (input.department) {
+      const term = input.department.toLowerCase();
+      results = results.filter((a) => a.department.toLowerCase().includes(term));
+    }
+
+    const latencyMs = Date.now() - startTime;
+    console.log(`[lookupAsset] ${results.length} results (${latencyMs}ms)`);
+    getActiveCollector()?.recordToolCall("lookupAsset", input as Record<string, unknown>, results.length, latencyMs);
+    return results;
+  }
+);
+
+// ---------------------------------------------------------------------------
+// getRepairHistory
+// ---------------------------------------------------------------------------
+
+const WorkOrderSummarySchema = z.object({
+  workOrderId: z.string(),
+  assetId: z.string(),
+  equipmentName: z.string(),
+  createdAt: z.string(),
+  completedAt: z.string().nullable(),
+  status: z.string(),
+  priority: z.string(),
+  diagnosis: z.string(),
+  rootCause: z.string().nullable(),
+  partsUsed: z.array(
+    z.object({
+      partNumber: z.string(),
+      partName: z.string(),
+      quantity: z.number(),
+    })
+  ),
+  laborHours: z.number(),
+  totalCost: z.number(),
+});
+
+export const getRepairHistory = ai.defineTool(
+  {
+    name: "getRepairHistory",
+    description:
+      "Fetch past work orders and repair history for a specific equipment asset or equipment model. " +
+      "Use this to identify recurring failures, past diagnoses, and what parts were previously used. " +
+      "Helps technicians understand if this is a known issue and what worked before.",
+    inputSchema: z.object({
+      assetId: z
+        .string()
+        .optional()
+        .describe("Equipment asset ID, e.g. 'ASSET-4302'"),
+      equipmentName: z
+        .string()
+        .optional()
+        .describe("Equipment model name to find history across all units"),
+      manufacturer: z
+        .string()
+        .optional()
+        .describe("Equipment manufacturer"),
+    }),
+    outputSchema: z.array(WorkOrderSummarySchema),
+  },
+  async (input) => {
+    const startTime = Date.now();
+    const db = getFirestore();
+    let query: FirebaseFirestore.Query = db.collection("work_orders");
+
+    if (input.assetId) {
+      query = query.where("assetId", "==", input.assetId);
+    }
+
+    const snapshot = await query.get();
+    let results: WorkOrder[] = snapshot.docs.map(
+      (doc: QueryDocumentSnapshot) => doc.data() as WorkOrder
+    );
+
+    if (input.equipmentName) {
+      const term = input.equipmentName.toLowerCase();
+      results = results.filter((wo) => wo.equipmentName.toLowerCase().includes(term));
+    }
+    if (input.manufacturer) {
+      const term = input.manufacturer.toLowerCase();
+      results = results.filter((wo) => wo.manufacturer.toLowerCase().includes(term));
+    }
+
+    // Sort by most recent first
+    results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Limit to 10 most recent
+    results = results.slice(0, 10);
+
+    const latencyMs = Date.now() - startTime;
+    console.log(`[getRepairHistory] ${results.length} work orders (${latencyMs}ms)`);
+    getActiveCollector()?.recordToolCall("getRepairHistory", input as Record<string, unknown>, results.length, latencyMs);
+    return results;
+  }
+);
+

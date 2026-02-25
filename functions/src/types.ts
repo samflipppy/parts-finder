@@ -94,6 +94,53 @@ export interface SectionEmbedding {
 }
 
 // ---------------------------------------------------------------------------
+// Equipment assets (hospital inventory)
+// ---------------------------------------------------------------------------
+
+export interface EquipmentAsset {
+  assetId: string;             // e.g. "ASSET-4302"
+  assetTag: string;            // physical label on the unit
+  equipmentName: string;       // e.g. "Evita V500"
+  manufacturer: string;
+  serialNumber: string;
+  department: string;          // e.g. "ICU-3", "OR-7"
+  location: string;            // e.g. "Building A, Floor 3, Room 312"
+  installDate: string;         // ISO date
+  warrantyExpiry: string;      // ISO date
+  hoursLogged: number;         // total operating hours
+  status: "active" | "down" | "maintenance" | "retired";
+  lastPmDate: string;          // last preventive maintenance
+  nextPmDue: string;           // next PM due date
+}
+
+// ---------------------------------------------------------------------------
+// Work orders
+// ---------------------------------------------------------------------------
+
+export interface WorkOrder {
+  workOrderId: string;
+  assetId: string;
+  equipmentName: string;
+  manufacturer: string;
+  department: string;
+  priority: "emergency" | "urgent" | "routine" | "scheduled";
+  status: "open" | "in_progress" | "parts_ordered" | "completed" | "cancelled";
+  createdAt: string;
+  completedAt: string | null;
+  technicianNotes: string;
+  diagnosis: string;
+  partsUsed: Array<{
+    partNumber: string;
+    partName: string;
+    quantity: number;
+    unitCost: number;
+  }>;
+  laborHours: number;
+  totalCost: number;
+  rootCause: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Chat messages
 // ---------------------------------------------------------------------------
 
@@ -181,5 +228,15 @@ export interface ChatAgentResponse {
   confidence: "high" | "medium" | "low" | null;
   reasoning: string | null;
   warnings: string[];
+  // --- PartsSource business fields ---
+  equipmentAsset: {
+    assetId: string;
+    assetTag: string;
+    department: string;
+    location: string;
+    hoursLogged: number;
+    warrantyExpiry: string;
+    status: string;
+  } | null;
 }
 

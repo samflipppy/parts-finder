@@ -48,6 +48,7 @@ describe("Technician repair workflow", () => {
       confidence: null,
       reasoning: "User provided insufficient detail. Need manufacturer, model, and symptoms.",
       warnings: [],
+      equipmentAsset: null,
     };
 
     assertValidResponse(response);
@@ -161,6 +162,7 @@ describe("Technician repair workflow", () => {
         "Critical part — verify OEM compatibility before installing.",
         "Equipment must be fully powered down before starting repair.",
       ],
+      equipmentAsset: null,
     };
 
     assertValidResponse(response);
@@ -242,6 +244,7 @@ describe("Technician repair workflow", () => {
       confidence: "high",
       reasoning: "Found exact connector info in the fan module section.",
       warnings: ["Do not rock the connector — pin damage risk."],
+      equipmentAsset: null,
     };
 
     assertValidResponse(response);
@@ -271,6 +274,7 @@ describe("Technician repair workflow", () => {
       confidence: "medium",
       reasoning: "Visual scoring observed, referenced spec from manual.",
       warnings: [],
+      equipmentAsset: null,
     };
 
     assertValidResponse(response);
@@ -317,6 +321,7 @@ describe("Technician repair workflow", () => {
       confidence: "high",
       reasoning: "Bearing wear confirmed visually.",
       warnings: ["Verify bearing clearance after installation."],
+      equipmentAsset: null,
     };
 
     assertValidResponse(response);
@@ -355,6 +360,7 @@ describe("Workflow edge cases", () => {
       confidence: "low",
       reasoning: "Query appears to be off-domain.",
       warnings: [],
+      equipmentAsset: null,
     };
 
     assertValidResponse(response);
@@ -375,6 +381,7 @@ describe("Workflow edge cases", () => {
       confidence: "low",
       reasoning: "No matching parts found after multiple search attempts.",
       warnings: ["Contact manufacturer for correct part number."],
+      equipmentAsset: null,
     };
 
     assertValidResponse(response);
