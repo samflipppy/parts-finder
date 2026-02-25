@@ -235,20 +235,24 @@ export const diagnosticPartnerChat = ai.defineFlow(
       }
 
       // ── Step 3: Search parts — the primary lookup ──
+      // Sanitize LLM extraction — models sometimes return "null" as a string
+      const notNull = (v: string | null | undefined): v is string =>
+        v != null && v !== "null" && v !== "none" && v !== "N/A";
+
       const partsInput: Record<string, string> = {};
-      if (params.manufacturer) partsInput.manufacturer = params.manufacturer;
-      if (params.equipmentName) partsInput.equipmentName = params.equipmentName;
-      if (params.errorCode) partsInput.errorCode = params.errorCode;
-      if (params.symptom) partsInput.symptom = params.symptom;
+      if (notNull(params.manufacturer)) partsInput.manufacturer = params.manufacturer;
+      if (notNull(params.equipmentName)) partsInput.equipmentName = params.equipmentName;
+      if (notNull(params.errorCode)) partsInput.errorCode = params.errorCode;
+      if (notNull(params.symptom)) partsInput.symptom = params.symptom;
 
       const parts = await searchParts(partsInput);
 
       // ── Step 4: Search manual ──
       const manualInput: Record<string, string> = {};
-      if (params.manufacturer) manualInput.manufacturer = params.manufacturer;
-      if (params.equipmentName) manualInput.equipmentName = params.equipmentName;
-      if (params.errorCode) manualInput.keyword = params.errorCode;
-      else if (params.symptom) manualInput.keyword = params.symptom;
+      if (notNull(params.manufacturer)) manualInput.manufacturer = params.manufacturer;
+      if (notNull(params.equipmentName)) manualInput.equipmentName = params.equipmentName;
+      if (notNull(params.errorCode)) manualInput.keyword = params.errorCode;
+      else if (notNull(params.symptom)) manualInput.keyword = params.symptom;
 
       const manualSections = await searchManual(manualInput);
 
@@ -270,9 +274,9 @@ export const diagnosticPartnerChat = ai.defineFlow(
 
       // ── Step 6: Asset lookup (if tag provided) ──
       let assets: unknown[] = [];
-      if (params.assetTag) {
+      if (notNull(params.assetTag)) {
         assets = await lookupAsset({ assetTag: params.assetTag });
-      } else if (params.department && params.equipmentName) {
+      } else if (notNull(params.department) && notNull(params.equipmentName)) {
         assets = await lookupAsset({ department: params.department, equipmentName: params.equipmentName });
       }
 

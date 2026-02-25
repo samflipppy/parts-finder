@@ -14,7 +14,8 @@
                 "filter": "metric.type=\"logging.googleapis.com/user/user_feedback_count\"",
                 "aggregation": {
                   "alignmentPeriod": "86400s",
-                  "perSeriesAligner": "ALIGN_SUM"
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
                 }
               }
             }
@@ -33,7 +34,8 @@
                 "filter": "metric.type=\"logging.googleapis.com/user/agent_request_count\"",
                 "aggregation": {
                   "alignmentPeriod": "86400s",
-                  "perSeriesAligner": "ALIGN_SUM"
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
                 }
               }
             }
@@ -134,7 +136,8 @@
                     "filter": "metric.type=\"logging.googleapis.com/user/agent_request_count\"",
                     "aggregation": {
                       "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_SUM"
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM"
                     }
                   }
                 },
@@ -218,7 +221,14 @@
           "title": "Total Tokens (24h)",
           "scorecard": {
             "timeSeriesQuery": {
-              "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_total_tokens\n| align delta(24h)\n| every 24h\n| value val().sum\n| group_by [], [value: sum(val())]"
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/agent_total_tokens\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
             }
           }
         }
@@ -232,7 +242,14 @@
           "title": "Avg Tokens / Request",
           "scorecard": {
             "timeSeriesQuery": {
-              "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_total_tokens\n| align delta(24h)\n| every 24h\n| value val().mean\n| group_by [], [value: mean(val())]"
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/agent_total_tokens\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_MEAN",
+                  "crossSeriesReducer": "REDUCE_MEAN"
+                }
+              }
             }
           }
         }
@@ -246,7 +263,14 @@
           "title": "Estimated Cost (24h)",
           "scorecard": {
             "timeSeriesQuery": {
-              "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_estimated_cost\n| align delta(24h)\n| every 24h\n| value val().sum\n| group_by [], [value: sum(val())]"
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/agent_estimated_cost\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
             }
           }
         }
@@ -261,14 +285,28 @@
             "dataSets": [
               {
                 "timeSeriesQuery": {
-                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_input_tokens\n| align delta(1h)\n| every 1h\n| value val().sum\n| group_by [], [value: sum(val())]"
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_input_tokens\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    }
+                  }
                 },
                 "plotType": "STACKED_BAR",
                 "legendTemplate": "Input Tokens"
               },
               {
                 "timeSeriesQuery": {
-                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_output_tokens\n| align delta(1h)\n| every 1h\n| value val().sum\n| group_by [], [value: sum(val())]"
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_output_tokens\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    }
+                  }
                 },
                 "plotType": "STACKED_BAR",
                 "legendTemplate": "Output Tokens"
@@ -289,7 +327,14 @@
             "dataSets": [
               {
                 "timeSeriesQuery": {
-                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_estimated_cost\n| align delta(1h)\n| every 1h\n| value val().sum\n| group_by [], [value: sum(val())]"
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_estimated_cost\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    }
+                  }
                 },
                 "plotType": "LINE",
                 "legendTemplate": "Cost (USD)"
@@ -309,14 +354,28 @@
             "dataSets": [
               {
                 "timeSeriesQuery": {
-                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_input_tokens\n| align delta(1h)\n| every 1h\n| value val().mean\n| group_by [], [value: mean(val())]"
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_input_tokens\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_MEAN",
+                      "crossSeriesReducer": "REDUCE_MEAN"
+                    }
+                  }
                 },
                 "plotType": "LINE",
                 "legendTemplate": "Avg Input"
               },
               {
                 "timeSeriesQuery": {
-                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_output_tokens\n| align delta(1h)\n| every 1h\n| value val().mean\n| group_by [], [value: mean(val())]"
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_output_tokens\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_MEAN",
+                      "crossSeriesReducer": "REDUCE_MEAN"
+                    }
+                  }
                 },
                 "plotType": "LINE",
                 "legendTemplate": "Avg Output"
@@ -362,7 +421,7 @@
           "title": "Recent Agent Logs",
           "logsPanel": {
             "filter": "jsonPayload.message=\"agent_request_complete\" OR jsonPayload.message=\"user_feedback\"",
-            "resourceNames": ["projects/680521534579"]
+            "resourceNames": ["projects/${PROJECT_ID}"]
           }
         }
       }
