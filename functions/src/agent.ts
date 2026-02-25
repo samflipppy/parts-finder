@@ -15,6 +15,7 @@ import {
 } from "./tools";
 import {
   MetricsCollector,
+  getActiveCollector,
   setActiveCollector,
   setActiveChunkEmitter,
   saveMetrics,
@@ -93,6 +94,28 @@ const StreamChunkSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text_chunk"), text: z.string() }),
 ]);
 
+// ---------------------------------------------------------------------------
+// Zero-tool-call detection
+// ---------------------------------------------------------------------------
+
+const EQUIPMENT_BRANDS = [
+  "drager", "dräger", "philips", "ge ", "ge-", "zoll", "siemens",
+  "medtronic", "baxter", "stryker", "hill-rom", "hillrom", "mindray",
+  "nihon kohden", "hamilton", "maquet", "getinge", "bd ", "alaris",
+];
+
+/**
+ * Returns true if the user message contains enough equipment info that
+ * the model should have called tools (manufacturer, model, error code, etc.).
+ */
+function looksLikeEquipmentQuery(text: string): boolean {
+  const lower = text.toLowerCase();
+  const hasBrand = EQUIPMENT_BRANDS.some((b) => lower.includes(b));
+  const hasIdentifier = /\b(error|err|code|fault|model|serial|asset|unit)\b/i.test(text)
+    || /[A-Z]{1,4}[- ]?\d{2,}/i.test(text);
+  return hasBrand || hasIdentifier;
+}
+
 // All tools available to the agent
 const ALL_TOOLS = [
   listManualSections,
@@ -148,15 +171,21 @@ export const diagnosticPartnerChat = ai.defineFlow(
       attributes: { "messages.count": input.messages.length },
     });
 
-    const MAX_RETRIES = 2;
+    const MAX_RETRIES = 3;
+    let forceToolPrompt = false;
 
     try {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
+        // On retry after zero-tool-call, append an instruction forcing tool usage
+        const effectivePrompt = forceToolPrompt
+          ? `${currentMessage.content}\n\n[SYSTEM: You MUST call your tools (lookupAsset, searchManual, searchParts, etc.) to research this equipment BEFORE responding. Do NOT respond without calling tools first. Call at least searchManual and searchParts.]`
+          : currentMessage.content;
+
         const { response: responsePromise, stream } = ai.generateStream({
           system: SYSTEM_PROMPT,
           messages: genkitHistory,
-          prompt: currentMessage.content,
+          prompt: effectivePrompt,
           tools: ALL_TOOLS,
           output: { schema: ChatAgentResponseSchema },
           maxTurns: 15,
@@ -194,6 +223,14 @@ export const diagnosticPartnerChat = ai.defineFlow(
           };
         }
 
+        // Guard: if the model skipped tool calls on a query with equipment info, retry
+        const toolCount = getActiveCollector()?.getToolCallCount() ?? 0;
+        if (toolCount === 0 && !forceToolPrompt && attempt < MAX_RETRIES && looksLikeEquipmentQuery(currentMessage.content)) {
+          console.warn(`[agent] Model returned 0 tool calls on equipment query (attempt ${attempt}/${MAX_RETRIES}). Retrying with forced tool prompt...`);
+          forceToolPrompt = true;
+          continue;
+        }
+
         span.setAttributes({
           "response.type": result.type,
           "part.found": !!(result.recommendedPart),
@@ -201,7 +238,7 @@ export const diagnosticPartnerChat = ai.defineFlow(
         });
         span.setStatus({ code: SpanStatusCode.OK });
         console.log(
-          `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}`
+          `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}, tools: ${toolCount}`
         );
 
         setActiveChunkEmitter(null);
