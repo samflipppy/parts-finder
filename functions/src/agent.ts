@@ -98,22 +98,18 @@ const StreamChunkSchema = z.discriminatedUnion("type", [
 // Zero-tool-call detection
 // ---------------------------------------------------------------------------
 
-const EQUIPMENT_BRANDS = [
-  "drager", "dräger", "philips", "ge ", "ge-", "zoll", "siemens",
-  "medtronic", "baxter", "stryker", "hill-rom", "hillrom", "mindray",
-  "nihon kohden", "hamilton", "maquet", "getinge", "bd ", "alaris",
-];
-
 /**
- * Returns true if the user message contains enough equipment info that
- * the model should have called tools (manufacturer, model, error code, etc.).
+ * Returns true if the model tried to answer without calling any tools.
+ * Clarifications (asking the user for more info) are fine with 0 tools.
+ * Anything else — diagnosis, guidance, photo_analysis — needs tool data.
  */
-function looksLikeEquipmentQuery(text: string): boolean {
-  const lower = text.toLowerCase();
-  const hasBrand = EQUIPMENT_BRANDS.some((b) => lower.includes(b));
-  const hasIdentifier = /\b(error|err|code|fault|model|serial|asset|unit)\b/i.test(text)
-    || /[A-Z]{1,4}[- ]?\d{2,}/i.test(text);
-  return hasBrand || hasIdentifier;
+function shouldRetryWithoutTools(
+  result: ChatAgentResponse,
+  toolCount: number
+): boolean {
+  if (toolCount > 0) return false;
+  if (result.type === "clarification") return false;
+  return true;
 }
 
 // All tools available to the agent
@@ -223,10 +219,10 @@ export const diagnosticPartnerChat = ai.defineFlow(
           };
         }
 
-        // Guard: if the model skipped tool calls on a query with equipment info, retry
+        // Guard: if the model tried to answer without calling any tools, retry
         const toolCount = getActiveCollector()?.getToolCallCount() ?? 0;
-        if (toolCount === 0 && !forceToolPrompt && attempt < MAX_RETRIES && looksLikeEquipmentQuery(currentMessage.content)) {
-          console.warn(`[agent] Model returned 0 tool calls on equipment query (attempt ${attempt}/${MAX_RETRIES}). Retrying with forced tool prompt...`);
+        if (!forceToolPrompt && attempt < MAX_RETRIES && shouldRetryWithoutTools(result, toolCount)) {
+          console.warn(`[agent] Model returned type="${result.type}" with 0 tool calls (attempt ${attempt}/${MAX_RETRIES}). Retrying with forced tool prompt...`);
           forceToolPrompt = true;
           continue;
         }
