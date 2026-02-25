@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var STREAM_URL = "/api/chatStream";
+  var STREAM_URL = "/api/chat";
 
   // Conversation state: array of { role, content }
   var messages = [];
