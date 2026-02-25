@@ -889,6 +889,92 @@
    Responsive
    ========================================================================== */
 
+/* ==========================================================================
+   Password gate overlay
+   ========================================================================== */
+
+.pw-gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.pw-gate-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 2rem 2.5rem;
+  max-width: 380px;
+  width: 90%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+.pw-gate-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 0.5rem;
+}
+
+.pw-gate-desc {
+  font-size: 0.88rem;
+  color: #6b7280;
+  margin-bottom: 1.25rem;
+}
+
+.pw-gate-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.pw-gate-input {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.92rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.pw-gate-input:focus {
+  border-color: #0066cc;
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15);
+}
+
+.pw-gate-btn {
+  padding: 0.6rem 1.25rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #fff;
+  background: #0066cc;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.pw-gate-btn:hover {
+  background: #0052a3;
+}
+
+.pw-gate-error {
+  margin-top: 0.75rem;
+  font-size: 0.82rem;
+  color: #dc2626;
+  min-height: 1.2em;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
 @media (max-width: 600px) {
   .chat-main {
     padding: 0 0.5rem;

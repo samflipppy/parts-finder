@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase-admin/app";
 import { onRequest } from "firebase-functions/v2/https";
+import { defineString } from "firebase-functions/params";
 import { flushTracing } from "genkit/tracing";
 import { chatStreamWithMetrics } from "./agent";
 import { getRecentMetrics, aggregateMetrics } from "./metrics";
@@ -12,6 +13,21 @@ export type { ValidationResult } from "./validation";
 
 // Initialize Firebase Admin SDK (once, at cold start)
 initializeApp();
+
+// ---------------------------------------------------------------------------
+// Demo password (set via firebase functions:config or .env)
+// ---------------------------------------------------------------------------
+
+const DEMO_PASSWORD = defineString("DEMO_PASSWORD", { default: "" });
+
+function checkDemoAuth(req: { headers: Record<string, unknown> }, res: { status: (code: number) => { json: (body: object) => void } }): boolean {
+  const password = DEMO_PASSWORD.value();
+  if (!password) return true; // no password configured → open access
+  const provided = req.headers["x-demo-password"] as string | undefined;
+  if (provided === password) return true;
+  res.status(401).json({ error: "Invalid or missing demo password." });
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Simple in-memory rate limiter (per Cloud Functions instance)
@@ -54,6 +70,8 @@ export const chat = onRequest(
       res.status(405).json({ error: "Method not allowed. Use POST." });
       return;
     }
+
+    if (!checkDemoAuth(req, res)) return;
 
     const clientIp = req.ip || "unknown";
     if (isRateLimited(clientIp)) {
@@ -111,6 +129,8 @@ export const metrics = onRequest(
       res.status(405).json({ error: "Method not allowed. Use GET." });
       return;
     }
+
+    if (!checkDemoAuth(req, res)) return;
 
     try {
       const limit = Math.min(

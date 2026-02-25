@@ -127,10 +127,23 @@ type ToolName =
   | "getRepairGuide";
 
 // ---------------------------------------------------------------------------
-// Constants
+// Constants & auth
 // ---------------------------------------------------------------------------
 
 const STREAM_URL = "/api/chat";
+const AUTH_KEY = "partsfinder_demo_pw";
+
+function getStoredPassword(): string | null {
+  return sessionStorage.getItem(AUTH_KEY);
+}
+
+function setStoredPassword(pw: string): void {
+  sessionStorage.setItem(AUTH_KEY, pw);
+}
+
+function clearStoredPassword(): void {
+  sessionStorage.removeItem(AUTH_KEY);
+}
 
 const TOOL_ICONS: Record<ToolName, string> = {
   lookupAsset: "\u{1F3E5}",
@@ -199,6 +212,89 @@ function logClientError(info: Record<string, unknown>): void {
 function scrollToBottom(): void {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
+
+// ---------------------------------------------------------------------------
+// Password gate
+// ---------------------------------------------------------------------------
+
+function showPasswordGate(): void {
+  const existing = document.getElementById("pw-gate");
+  if (existing) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "pw-gate";
+  overlay.className = "pw-gate-overlay";
+
+  overlay.innerHTML =
+    `<div class="pw-gate-card">` +
+      `<div class="pw-gate-title">PartsSource Demo</div>` +
+      `<p class="pw-gate-desc">Enter the demo password to continue.</p>` +
+      `<form id="pw-gate-form" class="pw-gate-form">` +
+        `<input id="pw-gate-input" type="password" placeholder="Password" class="pw-gate-input" autocomplete="off" />` +
+        `<button type="submit" class="pw-gate-btn">Enter</button>` +
+      `</form>` +
+      `<p id="pw-gate-error" class="pw-gate-error"></p>` +
+    `</div>`;
+
+  document.body.appendChild(overlay);
+
+  const form = document.getElementById("pw-gate-form")!;
+  const input = document.getElementById("pw-gate-input") as HTMLInputElement;
+  const errorEl = document.getElementById("pw-gate-error")!;
+
+  input.focus();
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const pw = input.value.trim();
+    if (!pw) return;
+
+    // Verify against the backend with a lightweight HEAD-style check
+    fetch(STREAM_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-demo-password": pw,
+      },
+      body: JSON.stringify({ messages: [{ role: "user", content: "ping" }] }),
+    }).then((res) => {
+      if (res.status === 401) {
+        errorEl.textContent = "Wrong password. Try again.";
+        input.value = "";
+        input.focus();
+        return;
+      }
+      // Password accepted (or no password required)
+      setStoredPassword(pw);
+      overlay.remove();
+    }).catch(() => {
+      errorEl.textContent = "Connection error. Try again.";
+    });
+  });
+}
+
+// Check auth on load — if no stored password, show gate
+function initAuth(): void {
+  if (!getStoredPassword()) {
+    // Test if the API even requires a password
+    fetch(STREAM_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "ping" }] }),
+    }).then((res) => {
+      if (res.status === 401) {
+        showPasswordGate();
+      } else {
+        // No password required — store empty marker so we don't re-check
+        setStoredPassword("");
+      }
+    }).catch(() => {
+      // Network error on init — don't block, let them try
+    });
+  }
+}
+
+initAuth();
 
 // ---------------------------------------------------------------------------
 // Greeting
@@ -287,12 +383,22 @@ function handleSend(): void {
   const completedTools: ToolDoneEvent[] = [];
   let streamedText = "";
 
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const pw = getStoredPassword();
+  if (pw) headers["x-demo-password"] = pw;
+
   fetch(STREAM_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ messages }),
   })
     .then((res) => {
+      if (res.status === 401) {
+        clearStoredPassword();
+        showPasswordGate();
+        throw new Error("Session expired. Please re-enter the demo password.");
+      }
+
       if (!res.ok) {
         return res.text().then((body) => {
           let parsed: Record<string, unknown>;
