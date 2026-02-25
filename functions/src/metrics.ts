@@ -40,6 +40,16 @@ export interface ToolCallMetric {
   ragTrace?: RAGTraceData;    // RAG pipeline trace (searchManual only)
 }
 
+export interface LLMCallMetric {
+  phase: string;             // "extraction" | "formatting"
+  model: string;             // e.g. "vertexai/gemini-2.0-flash"
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  latencyMs: number;
+  estimatedCostUsd: number;  // based on published pricing
+}
+
 export interface RequestMetrics {
   requestId: string;
   timestamp: string;
@@ -49,6 +59,14 @@ export interface RequestMetrics {
   toolCalls: ToolCallMetric[];
   totalToolCalls: number;
   toolSequence: string[]; // e.g. ["searchParts", "getSuppliers"]
+
+  // LLM usage
+  llmCalls: LLMCallMetric[];
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalTokens: number;
+  totalEstimatedCostUsd: number;
+  model: string;
 
   // Response quality
   confidence: "high" | "medium" | "low";
@@ -95,10 +113,20 @@ export function setActiveChunkEmitter(fn: ((chunk: StreamChunk) => void) | null)
 // MetricsCollector
 // ---------------------------------------------------------------------------
 
+// Gemini 2.0 Flash pricing (per 1M tokens, ≤128K context)
+const COST_PER_1M_INPUT = 0.10;
+const COST_PER_1M_OUTPUT = 0.40;
+
+function estimateCost(inputTokens: number, outputTokens: number): number {
+  return (inputTokens * COST_PER_1M_INPUT + outputTokens * COST_PER_1M_OUTPUT) / 1_000_000;
+}
+
 export class MetricsCollector {
   readonly requestId: string;
   private startTime: number;
   private toolCalls: ToolCallMetric[] = [];
+  private llmCalls: LLMCallMetric[] = [];
+  private _model = "vertexai/gemini-2.0-flash";
 
   constructor() {
     this.requestId = randomUUID();
@@ -126,6 +154,28 @@ export class MetricsCollector {
     _activeChunkEmitter?.({ type: "tool_done", toolName, resultCount, latencyMs });
   }
 
+  /** Record a single LLM generation call with token usage. */
+  recordLLMCall(
+    phase: string,
+    model: string,
+    inputTokens: number,
+    outputTokens: number,
+    latencyMs: number
+  ): void {
+    const totalTokens = inputTokens + outputTokens;
+    const estimatedCostUsd = estimateCost(inputTokens, outputTokens);
+    this._model = model;
+    this.llmCalls.push({
+      phase,
+      model,
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      latencyMs,
+      estimatedCostUsd,
+    });
+  }
+
   /** How many tool calls have been recorded so far. */
   getToolCallCount(): number {
     return this.toolCalls.length;
@@ -143,6 +193,11 @@ export class MetricsCollector {
         ? Math.round(totalToolLatency / this.toolCalls.length)
         : 0;
 
+    const totalInputTokens = this.llmCalls.reduce((s, c) => s + c.inputTokens, 0);
+    const totalOutputTokens = this.llmCalls.reduce((s, c) => s + c.outputTokens, 0);
+    const totalTokens = totalInputTokens + totalOutputTokens;
+    const totalEstimatedCostUsd = this.llmCalls.reduce((s, c) => s + c.estimatedCostUsd, 0);
+
     const metrics: RequestMetrics = {
       requestId: this.requestId,
       timestamp: new Date().toISOString(),
@@ -150,6 +205,12 @@ export class MetricsCollector {
       toolCalls: this.toolCalls,
       totalToolCalls: this.toolCalls.length,
       toolSequence: this.toolCalls.map((tc) => tc.toolName),
+      llmCalls: this.llmCalls,
+      totalInputTokens,
+      totalOutputTokens,
+      totalTokens,
+      totalEstimatedCostUsd,
+      model: this._model,
       confidence: response.confidence,
       partFound: response.recommendedPart !== null,
       recommendedPartNumber: response.recommendedPart?.partNumber ?? null,
@@ -164,7 +225,9 @@ export class MetricsCollector {
     console.log(
       `[metrics] Request ${this.requestId} completed in ${totalLatencyMs}ms — ` +
         `${this.toolCalls.length} tool calls, confidence: ${response.confidence}, ` +
-        `part found: ${metrics.partFound}`
+        `part found: ${metrics.partFound}, ` +
+        `tokens: ${totalInputTokens}in/${totalOutputTokens}out, ` +
+        `cost: $${totalEstimatedCostUsd.toFixed(6)}`
     );
 
     // Structured log for Cloud Monitoring log-based metrics
@@ -182,6 +245,13 @@ export class MetricsCollector {
         supplierCount: metrics.supplierCount,
         warningCount: metrics.warningCount,
         toolSequence: metrics.toolSequence,
+        // LLM usage — drives dashboard widgets for model evaluation
+        model: this._model,
+        totalInputTokens,
+        totalOutputTokens,
+        totalTokens,
+        estimatedCostUsd: parseFloat(totalEstimatedCostUsd.toFixed(6)),
+        llmCallCount: this.llmCalls.length,
       },
     }));
 
