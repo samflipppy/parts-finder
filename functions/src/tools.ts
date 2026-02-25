@@ -144,13 +144,23 @@ export const searchParts = ai.defineTool(
     const startTime = Date.now();
     const db = getFirestore();
 
+    // Sanitize LLM outputs — models sometimes return the string "null" instead of omitting the field
+    const clean = (v: string | undefined): string | undefined =>
+      v && v !== "null" && v !== "none" && v !== "N/A" ? v : undefined;
+
+    const manufacturer = clean(input.manufacturer);
+    const equipmentName = clean(input.equipmentName);
+    const errorCode = clean(input.errorCode);
+    const symptom = clean(input.symptom);
+    const category = clean(input.category);
+
     // Push exact-match filters to Firestore where possible
     let query: FirebaseFirestore.Query = db.collection("parts");
-    if (input.category) {
-      query = query.where("category", "==", input.category.toLowerCase());
+    if (category) {
+      query = query.where("category", "==", category.toLowerCase());
     }
-    if (input.manufacturer) {
-      query = query.where("manufacturer", "==", input.manufacturer);
+    if (manufacturer) {
+      query = query.where("manufacturer", "==", manufacturer);
     }
 
     const snapshot = await query.get();
@@ -161,31 +171,31 @@ export const searchParts = ai.defineTool(
     const filterSteps: FilterStep[] = [];
 
     // Server-side filters already applied — record them for tracing
-    if (input.category) {
-      filterSteps.push({ filter: "category", value: input.category, remaining: results.length });
+    if (category) {
+      filterSteps.push({ filter: "category", value: category, remaining: results.length });
     }
-    if (input.manufacturer) {
-      filterSteps.push({ filter: "manufacturer", value: input.manufacturer, remaining: results.length });
+    if (manufacturer) {
+      filterSteps.push({ filter: "manufacturer", value: manufacturer, remaining: results.length });
     }
 
-    if (input.equipmentName) {
-      const searchTerm = input.equipmentName.toLowerCase();
+    if (equipmentName) {
+      const searchTerm = equipmentName.toLowerCase();
       results = results.filter((part) =>
         part.compatibleEquipment.some((eq) => eq.toLowerCase().includes(searchTerm))
       );
-      filterSteps.push({ filter: "equipmentName", value: input.equipmentName, remaining: results.length });
+      filterSteps.push({ filter: "equipmentName", value: equipmentName, remaining: results.length });
     }
 
-    if (input.errorCode) {
-      const searchTerm = input.errorCode.toLowerCase();
+    if (errorCode) {
+      const searchTerm = errorCode.toLowerCase();
       results = results.filter((part) =>
         part.relatedErrorCodes.some((code) => code.toLowerCase().includes(searchTerm))
       );
-      filterSteps.push({ filter: "errorCode", value: input.errorCode, remaining: results.length });
+      filterSteps.push({ filter: "errorCode", value: errorCode, remaining: results.length });
     }
 
-    if (input.symptom) {
-      const words = input.symptom.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+    if (symptom) {
+      const words = symptom.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
       const filtered = results.filter(
         (part) => {
           const haystack = (part.description + " " + part.name).toLowerCase();
@@ -196,7 +206,7 @@ export const searchParts = ai.defineTool(
       if (filtered.length > 0) {
         results = filtered;
       }
-      filterSteps.push({ filter: "symptom", value: input.symptom, remaining: results.length });
+      filterSteps.push({ filter: "symptom", value: symptom, remaining: results.length });
     }
 
     const latencyMs = Date.now() - startTime;
