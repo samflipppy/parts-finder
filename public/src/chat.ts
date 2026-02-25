@@ -651,13 +651,13 @@ function renderAssistantResponse(data: ChatAgentResponse): void {
     }
   }
 
-  // "Rate this conversation" button
-  if (!feedbackSubmitted) {
-    const rateBtn = document.createElement("button");
-    rateBtn.className = "buy-btn";
-    rateBtn.textContent = "Rate this conversation";
-    rateBtn.addEventListener("click", () => showFeedbackToast());
-    bubble.appendChild(rateBtn);
+  // Buy button (opens popup with purchase CTA + rating)
+  if (data.recommendedPart && !feedbackSubmitted) {
+    const buyBtn = document.createElement("button");
+    buyBtn.className = "buy-btn";
+    buyBtn.textContent = `Buy ${data.recommendedPart.name}`;
+    buyBtn.addEventListener("click", () => showBuyPopup(data.recommendedPart!));
+    bubble.appendChild(buyBtn);
   }
 
   chatMessages.appendChild(bubble);
@@ -665,10 +665,10 @@ function renderAssistantResponse(data: ChatAgentResponse): void {
 }
 
 // ---------------------------------------------------------------------------
-// Feedback toast (star rating)
+// Buy popup (purchase CTA + star rating)
 // ---------------------------------------------------------------------------
 
-function showFeedbackToast(): void {
+function showBuyPopup(part: RecommendedPart): void {
   if (document.getElementById("feedback-toast")) return;
 
   const toast = document.createElement("div");
@@ -677,8 +677,14 @@ function showFeedbackToast(): void {
 
   toast.innerHTML =
     `<div class="buy-toast-inner">` +
-      `<div class="buy-toast-title">Rate this conversation</div>` +
-      `<p class="buy-toast-body">Your feedback goes to our <strong>model evaluation metrics</strong> and helps us improve.</p>` +
+      `<div class="buy-toast-title">Order ${escapeHtml(part.name)}</div>` +
+      `<div class="buy-popup-part-details">` +
+        `<div class="buy-popup-pn">P/N ${escapeHtml(part.partNumber)}</div>` +
+        `<div class="buy-popup-price">$${(part.avgPrice || 0).toLocaleString()}</div>` +
+      `</div>` +
+      `<button class="buy-popup-order-btn" id="buy-order-btn" type="button">Request Quote from PartsSource</button>` +
+      `<div class="buy-popup-divider"></div>` +
+      `<p class="buy-toast-body">How was this recommendation?</p>` +
       `<div class="feedback-stars" id="feedback-stars">` +
         `${[1, 2, 3, 4, 5].map((n) => `<button class="feedback-star" data-rating="${n}" type="button" aria-label="${n} star${n > 1 ? "s" : ""}">&#9733;</button>`).join("")}` +
       `</div>` +
@@ -690,6 +696,14 @@ function showFeedbackToast(): void {
 
   // Animate in
   requestAnimationFrame(() => toast.classList.add("buy-toast-visible"));
+
+  // Order button — demo-only placeholder
+  document.getElementById("buy-order-btn")!.addEventListener("click", () => {
+    const btn = document.getElementById("buy-order-btn") as HTMLButtonElement;
+    btn.textContent = "Quote requested!";
+    btn.disabled = true;
+    btn.classList.add("buy-popup-order-btn-done");
+  });
 
   // Star hover + click
   const starsContainer = document.getElementById("feedback-stars")!;
