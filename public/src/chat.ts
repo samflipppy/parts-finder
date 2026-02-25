@@ -273,25 +273,27 @@ function showPasswordGate(): void {
   });
 }
 
-// Check auth on load — if no stored password, show gate
+// Check auth on load — if no stored password, probe the API
 function initAuth(): void {
-  if (!getStoredPassword()) {
-    // Test if the API even requires a password
-    fetch(STREAM_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: "ping" }] }),
-    }).then((res) => {
-      if (res.status === 401) {
-        showPasswordGate();
-      } else {
-        // No password required — store empty marker so we don't re-check
-        setStoredPassword("");
-      }
-    }).catch(() => {
-      // Network error on init — don't block, let them try
-    });
-  }
+  const stored = getStoredPassword();
+  if (stored !== null) return; // already authenticated this session
+
+  // Probe the API to see if a password is required
+  fetch(STREAM_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages: [{ role: "user", content: "ping" }] }),
+  }).then((res) => {
+    if (res.status === 401) {
+      showPasswordGate();
+    } else {
+      // No password required — store empty marker so we don't re-check
+      setStoredPassword("");
+    }
+  }).catch(() => {
+    // Backend unreachable — show gate so user can enter password for when it's up
+    showPasswordGate();
+  });
 }
 
 initAuth();
