@@ -175,7 +175,7 @@ Users can rate each conversation 1-5 stars via a button on assistant responses. 
 npm test
 ```
 
-Runs 72 tests across 4 suites: request validation, filtering logic, schema validation, metrics collection, and end-to-end technician workflows.
+Runs 94 tests across 5 suites: request validation, filtering logic, schema validation, metrics collection, and end-to-end technician workflows.
 
 ## Tech Stack
 
@@ -188,7 +188,7 @@ Runs 72 tests across 4 suites: request validation, filtering logic, schema valid
 | API | Firebase Cloud Functions v2 (SSE streaming) |
 | Frontend | TypeScript → esbuild → vanilla JS (IIFE) |
 | Auth | Backend-verified demo password |
-| Testing | Jest + ts-jest (72 tests) |
+| Testing | Jest + ts-jest (94 tests) |
 | Observability | Cloud Logging + Cloud Trace + Cloud Monitoring |
 | Deployment | Firebase Hosting + Functions |
 
