@@ -35,9 +35,22 @@ gcloud logging metrics create agent_request_latency \
   2>/dev/null || echo "  agent_request_latency already exists"
 
 # Metric: Agent request count (counter by confidence level)
-gcloud logging metrics create agent_request_count \
-  --description="Count of agent requests by confidence level" \
-  --log-filter='jsonPayload.message="agent_request_complete"' \
+cat > /tmp/metric_request_count.json << 'METRIC_EOF'
+{
+  "name": "agent_request_count",
+  "description": "Count of agent requests by confidence level",
+  "filter": "jsonPayload.message=\"agent_request_complete\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      { "key": "confidence", "description": "Confidence level (high/medium/low)", "valueType": "STRING" }
+    ]
+  },
+  "labelExtractors": { "confidence": "EXTRACT(jsonPayload.agent.confidence)" }
+}
+METRIC_EOF
+gcloud logging metrics create agent_request_count --config-from-file=/tmp/metric_request_count.json \
   2>/dev/null || echo "  agent_request_count already exists"
 
 # Metric: User feedback rating (distribution)
@@ -46,10 +59,23 @@ gcloud logging metrics create user_feedback_rating \
   --log-filter='jsonPayload.message="user_feedback"' \
   2>/dev/null || echo "  user_feedback_rating already exists"
 
-# Metric: User feedback count
-gcloud logging metrics create user_feedback_count \
-  --description="Count of user feedback submissions" \
-  --log-filter='jsonPayload.message="user_feedback"' \
+# Metric: User feedback count (counter by rating)
+cat > /tmp/metric_feedback_count.json << 'METRIC_EOF'
+{
+  "name": "user_feedback_count",
+  "description": "Count of user feedback submissions by rating",
+  "filter": "jsonPayload.message=\"user_feedback\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      { "key": "rating", "description": "Star rating (1-5)", "valueType": "STRING" }
+    ]
+  },
+  "labelExtractors": { "rating": "EXTRACT(jsonPayload.feedback.rating)" }
+}
+METRIC_EOF
+gcloud logging metrics create user_feedback_count --config-from-file=/tmp/metric_feedback_count.json \
   2>/dev/null || echo "  user_feedback_count already exists"
 
 # Metric: Error count (from Cloud Functions)
@@ -120,7 +146,13 @@ cat > /tmp/metric_request_by_model.json << 'METRIC_EOF'
   "name": "agent_request_by_model",
   "description": "Agent request count by LLM model — for model comparison over time",
   "filter": "jsonPayload.message=\"agent_request_complete\"",
-  "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64" },
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      { "key": "model", "description": "LLM model identifier", "valueType": "STRING" }
+    ]
+  },
   "labelExtractors": { "model": "EXTRACT(jsonPayload.agent.model)" }
 }
 METRIC_EOF

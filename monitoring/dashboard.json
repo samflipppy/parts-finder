@@ -218,13 +218,7 @@
           "title": "Total Tokens (24h)",
           "scorecard": {
             "timeSeriesQuery": {
-              "timeSeriesFilter": {
-                "filter": "metric.type=\"logging.googleapis.com/user/agent_total_tokens\"",
-                "aggregation": {
-                  "alignmentPeriod": "86400s",
-                  "perSeriesAligner": "ALIGN_SUM"
-                }
-              }
+              "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_total_tokens\n| align delta(24h)\n| every 24h\n| value val().sum\n| group_by [], [value: sum(val())]"
             }
           }
         }
@@ -238,13 +232,7 @@
           "title": "Avg Tokens / Request",
           "scorecard": {
             "timeSeriesQuery": {
-              "timeSeriesFilter": {
-                "filter": "metric.type=\"logging.googleapis.com/user/agent_total_tokens\"",
-                "aggregation": {
-                  "alignmentPeriod": "86400s",
-                  "perSeriesAligner": "ALIGN_MEAN"
-                }
-              }
+              "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_total_tokens\n| align delta(24h)\n| every 24h\n| value val().mean\n| group_by [], [value: mean(val())]"
             }
           }
         }
@@ -258,13 +246,7 @@
           "title": "Estimated Cost (24h)",
           "scorecard": {
             "timeSeriesQuery": {
-              "timeSeriesFilter": {
-                "filter": "metric.type=\"logging.googleapis.com/user/agent_estimated_cost\"",
-                "aggregation": {
-                  "alignmentPeriod": "86400s",
-                  "perSeriesAligner": "ALIGN_SUM"
-                }
-              }
+              "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_estimated_cost\n| align delta(24h)\n| every 24h\n| value val().sum\n| group_by [], [value: sum(val())]"
             }
           }
         }
@@ -279,26 +261,14 @@
             "dataSets": [
               {
                 "timeSeriesQuery": {
-                  "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/agent_input_tokens\"",
-                    "aggregation": {
-                      "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_SUM"
-                    }
-                  }
+                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_input_tokens\n| align delta(1h)\n| every 1h\n| value val().sum\n| group_by [], [value: sum(val())]"
                 },
                 "plotType": "STACKED_BAR",
                 "legendTemplate": "Input Tokens"
               },
               {
                 "timeSeriesQuery": {
-                  "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/agent_output_tokens\"",
-                    "aggregation": {
-                      "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_SUM"
-                    }
-                  }
+                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_output_tokens\n| align delta(1h)\n| every 1h\n| value val().sum\n| group_by [], [value: sum(val())]"
                 },
                 "plotType": "STACKED_BAR",
                 "legendTemplate": "Output Tokens"
@@ -319,13 +289,7 @@
             "dataSets": [
               {
                 "timeSeriesQuery": {
-                  "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/agent_estimated_cost\"",
-                    "aggregation": {
-                      "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_SUM"
-                    }
-                  }
+                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_estimated_cost\n| align delta(1h)\n| every 1h\n| value val().sum\n| group_by [], [value: sum(val())]"
                 },
                 "plotType": "LINE",
                 "legendTemplate": "Cost (USD)"
@@ -345,26 +309,14 @@
             "dataSets": [
               {
                 "timeSeriesQuery": {
-                  "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/agent_input_tokens\"",
-                    "aggregation": {
-                      "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_MEAN"
-                    }
-                  }
+                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_input_tokens\n| align delta(1h)\n| every 1h\n| value val().mean\n| group_by [], [value: mean(val())]"
                 },
                 "plotType": "LINE",
                 "legendTemplate": "Avg Input"
               },
               {
                 "timeSeriesQuery": {
-                  "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/agent_output_tokens\"",
-                    "aggregation": {
-                      "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_MEAN"
-                    }
-                  }
+                  "timeSeriesQueryLanguage": "fetch logging.googleapis.com/user/agent_output_tokens\n| align delta(1h)\n| every 1h\n| value val().mean\n| group_by [], [value: mean(val())]"
                 },
                 "plotType": "LINE",
                 "legendTemplate": "Avg Output"
