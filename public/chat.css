@@ -487,6 +487,60 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* Buy popup part details */
+.buy-popup-part-details {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.buy-popup-pn {
+  font-size: 0.82rem;
+  color: #9ca3af;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.buy-popup-price {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #34d399;
+}
+
+.buy-popup-order-btn {
+  display: block;
+  width: 100%;
+  padding: 0.65rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  background: #059669;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 0.75rem;
+}
+
+.buy-popup-order-btn:hover {
+  background: #047857;
+}
+
+.buy-popup-order-btn:disabled {
+  cursor: default;
+}
+
+.buy-popup-order-btn-done {
+  background: #374151 !important;
+}
+
+.buy-popup-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  margin-bottom: 0.75rem;
+}
+
 /* Feedback star rating */
 .feedback-stars {
   display: flex;
