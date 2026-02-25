@@ -396,8 +396,23 @@ function handleSend(): void {
   streamTextEl.className = "stream-text";
   streamBubble.appendChild(streamTextEl);
 
+  // Show typing dots immediately so the bubble isn't blank while waiting
+  const typingEl = document.createElement("div");
+  typingEl.className = "typing-indicator";
+  typingEl.innerHTML = "<span></span><span></span><span></span>";
+  streamBubble.appendChild(typingEl);
+  scrollToBottom();
+
   const completedTools: ToolDoneEvent[] = [];
   let streamedText = "";
+  let typingRemoved = false;
+
+  function removeTypingIndicator(): void {
+    if (!typingRemoved && typingEl.parentNode) {
+      typingEl.remove();
+      typingRemoved = true;
+    }
+  }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const pw = getStoredPassword();
@@ -454,15 +469,18 @@ function handleSend(): void {
 
             switch (event.type) {
               case "tool_done":
+                removeTypingIndicator();
                 completedTools.push(event);
                 renderToolProgress(progressEl, completedTools);
                 break;
               case "text_chunk":
+                removeTypingIndicator();
                 streamedText += event.text;
                 streamTextEl.textContent = streamedText;
                 scrollToBottom();
                 break;
               case "phase_structuring": {
+                removeTypingIndicator();
                 const phaseEl = document.createElement("div");
                 phaseEl.className = "stream-phase-indicator";
                 phaseEl.textContent = "Structuring response...";
