@@ -1,127 +1,202 @@
-# PartsFinder Agent
+# PartsFinder — Repair Intelligence Agent
 
-An AI-powered healthcare equipment diagnostic and procurement assistant built with Firebase, Google Genkit, and Vertex AI. Hospital biomedical technicians describe a broken equipment problem in plain language and the agent identifies the correct replacement part, searches a mock parts database, retrieves relevant service manual sections via RAG, scores available suppliers using a weighted quality model, and returns a ranked recommendation with full reasoning.
+An AI-powered healthcare equipment diagnostic assistant built with Firebase, Google Genkit, and Vertex AI. Hospital biomedical technicians describe a broken equipment problem in plain language and the agent identifies the correct replacement part, retrieves relevant service manual sections via RAG, scores suppliers, and returns a ranked recommendation with full reasoning.
 
 ## Prerequisites
 
-- **Node.js 22+**
+- **Node.js 24+**
 - **Firebase CLI** (`npm install -g firebase-tools`)
+- **Google Cloud CLI** (`gcloud`) — for monitoring setup
 - **Google Cloud project** with Vertex AI API enabled
 - A Firebase project with Firestore enabled
-- Service account credentials with Vertex AI access
 
-## Setup
-
-### 1. Install dependencies
+## Quick Start (full deploy)
 
 ```bash
-cd functions
+# 1. Install all dependencies
 npm install
-```
+cd functions && npm install && cd ..
 
-### 2. Configure credentials
+# 2. Authenticate
+firebase login
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
 
-Ensure your Google Cloud service account has access to Vertex AI. For local development:
+# 3. Set the demo password
+echo 'DEMO_PASSWORD=123' > functions/.env
 
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-```
+# 4. Generate embeddings for RAG search
+cd functions && npx tsx src/embed-sections.ts && cd ..
 
-### 3. Seed the database
+# 5. Seed the Firestore database
+cd functions && npm run seed && cd ..
 
-Start the Firestore emulator (or point to a live project) and run the seeder:
+# 6. Build everything (frontend TS + backend TS)
+npm run build
 
-```bash
-# Using the emulator
-firebase emulators:start --only firestore
-
-# In another terminal
-cd functions
-npm run seed
-```
-
-### 4. Generate embeddings (for RAG search)
-
-```bash
-cd functions
-npx tsx src/embed-sections.ts
-```
-
-This creates vector embeddings for all service manual sections, enabling semantic search.
-
-### 5. Run locally
-
-```bash
-firebase emulators:start
-```
-
-The frontend will be available at `http://localhost:5000` and the API at `http://localhost:5001/<project-id>/us-central1/chat`.
-
-## Deploy
-
-```bash
+# 7. Deploy to Firebase (Hosting + Functions)
 firebase deploy
+
+# 8. Set up Cloud Monitoring dashboard (one-time)
+./monitoring/setup-metrics.sh
 ```
 
-This deploys Cloud Functions and Hosting in one command.
+Your app is live at `https://YOUR_PROJECT_ID.web.app`.
+
+## Local Development
+
+```bash
+# Start emulators (Firestore + Functions + Hosting)
+firebase emulators:start
+
+# In another terminal — watch frontend TS for changes
+npm run build:ui:watch
+```
+
+The frontend is at `http://localhost:5000`, API at `http://localhost:5001`.
+
+## Project Structure
+
+```
+parts-finder/
+├── public/                    # Firebase Hosting (served as-is)
+│   ├── src/
+│   │   └── chat.ts            # Frontend source (TypeScript)
+│   ├── chat.css               # Chat UI styles
+│   ├── style.css              # Base styles
+│   ├── chat.html              # Main page
+│   ├── chat.js                # Build artifact (gitignored)
+│   └── tsconfig.json          # Frontend TS config
+├── functions/
+│   └── src/
+│       ├── index.ts           # Cloud Functions entry (chat, metrics, feedback)
+│       ├── agent.ts           # Genkit agent flow + streaming
+│       ├── tools.ts           # 8 Genkit tools
+│       ├── prompts.ts         # System prompt
+│       ├── types.ts           # Shared TypeScript interfaces
+│       ├── metrics.ts         # Metrics collection + Firestore persistence
+│       ├── validation.ts      # Request validation
+│       ├── ai.ts              # Genkit + Vertex AI config
+│       ├── seed.ts            # Firestore data seeder
+│       ├── embed-sections.ts  # Vector embedding generator for RAG
+│       └── __tests__/         # 72 tests across 4 suites
+├── monitoring/
+│   ├── setup-metrics.sh       # Creates log-based metrics + dashboard
+│   └── dashboard.json         # Cloud Monitoring dashboard config
+├── firebase.json              # Hosting rewrites + emulator config
+├── firestore.rules            # Firestore security rules
+└── package.json               # Root build scripts (esbuild + tsc)
+```
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/chat` | POST | Multi-turn diagnostic chat (returns full response) |
-| `/api/chatStream` | POST | Streaming version with SSE events for tool progress |
-| `/api/metrics` | GET | Recent request metrics and aggregate stats |
+| `/api/chat` | POST | Streaming diagnostic chat (SSE) |
+| `/api/metrics` | GET | Recent request metrics + aggregate stats |
+| `/api/feedback` | POST | Submit 1-5 star conversation rating |
 
-## Example Prompts
+All endpoints are protected by the `DEMO_PASSWORD` when configured.
 
-Try these in the UI:
+## Auth
 
-1. **"Drager Evita V500 showing error 57, fan module is not spinning"** -- Should return Fan Module Assembly with high confidence
-2. **"Philips IntelliVue MX800 screen went black, no display output"** -- Should return Display Panel LCD
-3. **"GE Optima CT660 tube arc fault during scan, mA calibration error"** -- Should return X-Ray Tube Assembly with critical warnings
-4. **"Zoll R Series defibrillator won't hold charge, battery light flashing"** -- Should return Battery Pack with quality-prioritized supplier ranking
-5. **"broken coffee maker"** -- Should return no match and low confidence
-6. **"ventilator is broken"** -- Should return multiple possibilities with medium confidence
+A simple backend-verified password gate. Set `DEMO_PASSWORD` in `functions/.env`:
+
+```
+DEMO_PASSWORD=123
+```
+
+- The frontend shows a password overlay on every new session
+- The `x-demo-password` header is checked server-side before any LLM call
+- If no password is configured, the app runs in open-access mode
+- Password is stored in `sessionStorage` (clears when the tab closes)
+
+## Agent Tools
+
+The agent has 8 tools organized in two phases:
+
+**Phase 1 — Identify & Research**
+| Tool | Description |
+|------|-------------|
+| `lookupAsset` | Look up equipment by asset tag in Firestore |
+| `getRepairHistory` | Fetch past work orders for an asset |
+| `listManualSections` | Load service manual table of contents |
+| `searchManual` | Semantic RAG search over manual sections |
+| `getManualSection` | Retrieve full text of a specific section |
+
+**Phase 2 — Parts & Suppliers**
+| Tool | Description |
+|------|-------------|
+| `searchParts` | Filter parts catalog by equipment/category/keyword |
+| `getSuppliers` | Get supplier rankings for a specific part |
+| `getRepairGuide` | Load step-by-step repair instructions |
 
 ## Architecture
 
 ```
 [Technician Input]
-    -> [Cloud Function: POST /api/chat]
-        -> [Genkit Flow: diagnosticPartnerChat]
-            Phase 1 — Research (tool calling):
-                -> [listManualSections] -> Firestore service_manuals
-                -> [searchManual] -> Vector search on section_embeddings
-                -> [getManualSection] -> Fetch full section content
-                -> [searchParts] -> Firestore parts collection
-                -> [getSuppliers] -> Firestore suppliers collection
-                -> [getRepairGuide] -> Firestore repair_guides
-            Phase 2 — Structuring:
-                -> [LLM converts research to structured JSON]
-        -> [ChatAgentResponse with diagnosis, parts, suppliers, manual refs]
-    -> [Frontend renders recommendation with agent trace]
+    → POST /api/chat (SSE stream)
+        → Genkit generateStream + 8 tools + Zod schema
+            → tool_done events (live progress)
+            → text_chunk events (streaming text)
+            → complete event (structured ChatAgentResponse + metrics)
+        → Firestore metrics persistence
+        → Cloud Logging structured logs
+    → Frontend renders: diagnosis, parts, manual refs, agent trace
 ```
+
+Single-phase architecture: one `generateStream` call with `tools` + `output: { schema }`, `maxTurns: 15`. No multi-step orchestration.
+
+## Observability
+
+Three layers, all automatic after deploy:
+
+1. **Cloud Logging** — structured JSON logs for every request (`agent_request_complete`) and feedback (`user_feedback`)
+2. **Genkit Cloud Trace** — full tool call chains, LLM latencies, spans via `flushTracing()`
+3. **Cloud Monitoring Dashboard** — run `./monitoring/setup-metrics.sh` once to create:
+   - Confidence distribution (high/medium/low)
+   - Response latency P50/P95/P99
+   - Tool usage patterns
+   - Error rate
+   - User feedback ratings over time
+
+Dashboard URL: `https://console.cloud.google.com/monitoring/dashboards?project=YOUR_PROJECT_ID`
+
+## User Feedback
+
+Users can rate each conversation 1-5 stars via a button on assistant responses. Ratings are:
+- Stored in Firestore `feedback` collection
+- Emitted as structured logs for Cloud Monitoring
+- Visible on the monitoring dashboard
+
+## Testing
+
+```bash
+npm test
+```
+
+Runs 72 tests across 4 suites: request validation, filtering logic, schema validation, metrics collection, and end-to-end technician workflows.
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|-----------|
-| Runtime | TypeScript / Node.js |
+| Runtime | TypeScript / Node.js 24 |
 | LLM Orchestration | Genkit |
 | LLM | Gemini 2.0 Flash via Vertex AI |
 | Database | Firebase Firestore |
-| API | Firebase Cloud Functions v2 |
-| Frontend | Single HTML page with vanilla JS |
-| Testing | Jest with ts-jest |
-| Observability | OpenTelemetry tracing + custom metrics |
+| API | Firebase Cloud Functions v2 (SSE streaming) |
+| Frontend | TypeScript → esbuild → vanilla JS (IIFE) |
+| Auth | Backend-verified demo password |
+| Testing | Jest + ts-jest (72 tests) |
+| Observability | Cloud Logging + Cloud Trace + Cloud Monitoring |
 | Deployment | Firebase Hosting + Functions |
 
-## Testing
+## Example Prompts
 
-```bash
-cd functions
-npm test
-```
-
-Runs 72 tests across 4 suites covering request validation, filtering logic, schema validation, metrics collection, and end-to-end technician workflows.
+1. **"Drager Evita V500 showing error 57, fan module is not spinning"** — Fan Module Assembly, high confidence
+2. **"Philips IntelliVue MX800 screen went black, no display output"** — Display Panel LCD
+3. **"GE Optima CT660 tube arc fault during scan, mA calibration error"** — X-Ray Tube Assembly with critical warnings
+4. **"Zoll R Series defibrillator won't hold charge, battery light flashing"** — Battery Pack with quality-prioritized supplier ranking
+5. **"broken coffee maker"** — No match, low confidence
+6. **"ventilator is broken"** — Asks clarifying questions
