@@ -148,85 +148,117 @@ export const diagnosticPartnerChat = ai.defineFlow(
       attributes: { "messages.count": input.messages.length },
     });
 
+    const MAX_RETRIES = 2;
+
     try {
-      const { response: responsePromise, stream } = ai.generateStream({
-        system: SYSTEM_PROMPT,
-        messages: genkitHistory,
-        prompt: currentMessage.content,
-        tools: ALL_TOOLS,
-        output: { schema: ChatAgentResponseSchema },
-        maxTurns: 15,
-      });
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const { response: responsePromise, stream } = ai.generateStream({
+          system: SYSTEM_PROMPT,
+          messages: genkitHistory,
+          prompt: currentMessage.content,
+          tools: ALL_TOOLS,
+          output: { schema: ChatAgentResponseSchema },
+          maxTurns: 15,
+        });
 
-      // Stream text chunks as they arrive (tool-calling turns produce planning text)
-      for await (const chunk of stream) {
-        if (chunk.text) {
-          sendChunk({ type: "text_chunk", text: chunk.text });
+        // Stream text chunks as they arrive (tool-calling turns produce planning text)
+        for await (const chunk of stream) {
+          if (chunk.text) {
+            sendChunk({ type: "text_chunk", text: chunk.text });
+          }
         }
-      }
 
-      const response = await responsePromise;
-      const result = response.output;
+        const response = await responsePromise;
+        const result = response.output;
 
-      if (!result) {
-        // Model didn't produce valid structured output — fall back to raw text
-        const rawText = response.text;
-        console.warn(`[agent] Structured output was null, falling back to raw text (${rawText.length} chars)`);
+        if (!result) {
+          // Model didn't produce valid structured output — fall back to raw text
+          const rawText = response.text;
+          console.warn(`[agent] Structured output was null, falling back to raw text (${rawText.length} chars)`);
+          span.setStatus({ code: SpanStatusCode.OK });
+          setActiveChunkEmitter(null);
+          return {
+            type: "guidance",
+            message: rawText || "I wasn't able to structure my response. Please try again.",
+            manualReferences: [],
+            diagnosis: null,
+            recommendedPart: null,
+            repairGuide: null,
+            supplierRanking: [],
+            alternativeParts: [],
+            confidence: "medium",
+            reasoning: "Structured output was null; returning raw text.",
+            warnings: [],
+            ...EMPTY_BUSINESS_FIELDS,
+          };
+        }
+
+        span.setAttributes({
+          "response.type": result.type,
+          "part.found": !!(result.recommendedPart),
+          "confidence": result.confidence ?? "null",
+        });
         span.setStatus({ code: SpanStatusCode.OK });
+        console.log(
+          `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}`
+        );
+
         setActiveChunkEmitter(null);
+        return result;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isSchemaNull = msg.includes("Schema validation failed") && msg.includes("null");
+        const isToolNull = msg.includes("missing tool response data");
+        const isRateLimit = msg.includes("429") || msg.toLowerCase().includes("resource exhausted");
+
+        // Retry on transient Gemini failures (null structured output, null tool responses)
+        if ((isSchemaNull || isToolNull) && attempt < MAX_RETRIES) {
+          console.warn(`[agent] Transient Gemini error on attempt ${attempt}/${MAX_RETRIES}, retrying...`);
+          continue;
+        }
+
+        span.recordException(new Error(msg));
+        span.setStatus({ code: SpanStatusCode.ERROR, message: msg });
+        console.error("[agent] Failed:", msg);
+
+        setActiveChunkEmitter(null);
+
         return {
-          type: "guidance",
-          message: rawText || "I wasn't able to structure my response. Please try again.",
+          type: "clarification",
+          message: isRateLimit
+            ? "The AI service is temporarily rate-limited. Please wait a moment and try again."
+            : "I wasn't able to process that. Could you rephrase your question? Include the equipment manufacturer and model if possible.",
           manualReferences: [],
           diagnosis: null,
           recommendedPart: null,
           repairGuide: null,
           supplierRanking: [],
           alternativeParts: [],
-          confidence: "medium",
-          reasoning: "Structured output was null; returning raw text.",
+          confidence: null,
+          reasoning: `Generation failed: ${msg}`,
           warnings: [],
           ...EMPTY_BUSINESS_FIELDS,
         };
       }
+    }
 
-      span.setAttributes({
-        "response.type": result.type,
-        "part.found": !!(result.recommendedPart),
-        "confidence": result.confidence ?? "null",
-      });
-      span.setStatus({ code: SpanStatusCode.OK });
-      console.log(
-        `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}`
-      );
-
-      setActiveChunkEmitter(null);
-      return result;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      span.recordException(new Error(msg));
-      span.setStatus({ code: SpanStatusCode.ERROR, message: msg });
-      console.error("[agent] Failed:", msg);
-
-      const isRateLimit = msg.includes("429") || msg.toLowerCase().includes("resource exhausted");
-      setActiveChunkEmitter(null);
-
-      return {
-        type: "clarification",
-        message: isRateLimit
-          ? "The AI service is temporarily rate-limited. Please wait a moment and try again."
-          : "I wasn't able to process that. Could you rephrase your question? Include the equipment manufacturer and model if possible.",
-        manualReferences: [],
-        diagnosis: null,
-        recommendedPart: null,
-        repairGuide: null,
-        supplierRanking: [],
-        alternativeParts: [],
-        confidence: null,
-        reasoning: `Generation failed: ${msg}`,
-        warnings: [],
-        ...EMPTY_BUSINESS_FIELDS,
-      };
+    // Exhausted retries — should not normally reach here
+    setActiveChunkEmitter(null);
+    return {
+      type: "clarification",
+      message: "I wasn't able to process that. Could you rephrase your question?",
+      manualReferences: [],
+      diagnosis: null,
+      recommendedPart: null,
+      repairGuide: null,
+      supplierRanking: [],
+      alternativeParts: [],
+      confidence: null,
+      reasoning: "Exhausted retries due to transient Gemini errors.",
+      warnings: [],
+      ...EMPTY_BUSINESS_FIELDS,
+    };
     } finally {
       span.end();
     }
