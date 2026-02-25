@@ -155,11 +155,30 @@ export class MetricsCollector {
       avgToolLatencyMs,
     };
 
+    // Human-readable log
     console.log(
       `[metrics] Request ${this.requestId} completed in ${totalLatencyMs}ms — ` +
         `${this.toolCalls.length} tool calls, confidence: ${response.confidence}, ` +
         `part found: ${metrics.partFound}`
     );
+
+    // Structured log for Cloud Monitoring log-based metrics
+    console.log(JSON.stringify({
+      severity: "INFO",
+      message: "agent_request_complete",
+      "logging.googleapis.com/labels": { type: "agent_metrics" },
+      agent: {
+        requestId: this.requestId,
+        totalLatencyMs,
+        totalToolCalls: this.toolCalls.length,
+        avgToolLatencyMs,
+        confidence: response.confidence,
+        partFound: metrics.partFound,
+        supplierCount: metrics.supplierCount,
+        warningCount: metrics.warningCount,
+        toolSequence: metrics.toolSequence,
+      },
+    }));
 
     return metrics;
   }

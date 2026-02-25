@@ -487,6 +487,47 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* Feedback star rating */
+.feedback-stars {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.feedback-star {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  color: #4b5563;
+  cursor: pointer;
+  transition: color 0.15s, transform 0.15s;
+  padding: 0.1rem;
+  line-height: 1;
+}
+
+.feedback-star:hover {
+  transform: scale(1.2);
+}
+
+.feedback-star-active {
+  color: #f59e0b;
+}
+
+.feedback-status {
+  font-size: 0.82rem;
+  min-height: 1.2em;
+  margin-bottom: 0.5rem;
+}
+
+.feedback-status-success {
+  color: #34d399;
+}
+
+.feedback-status-error {
+  color: #f87171;
+}
+
 /* Agent trace inside chat bubbles */
 .chat-trace {
   margin-top: 0.75rem;

@@ -1,0 +1,209 @@
+{
+  "displayName": "PartsFinder Agent Health",
+  "mosaicLayout": {
+    "columns": 12,
+    "tiles": [
+      {
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "User Feedback Ratings (1-5 Stars)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/user_feedback_count\" resource.type=\"cloud_function\"",
+                "aggregation": {
+                  "alignmentPeriod": "3600s",
+                  "perSeriesAligner": "ALIGN_RATE"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Total Agent Requests",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/agent_request_count\" resource.type=\"cloud_function\"",
+                "aggregation": {
+                  "alignmentPeriod": "3600s",
+                  "perSeriesAligner": "ALIGN_RATE"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "yPos": 4,
+        "width": 6,
+        "height": 8,
+        "widget": {
+          "title": "Confidence Distribution (high / medium / low)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_request_count\" resource.type=\"cloud_function\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["metric.label.confidence"]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR"
+              }
+            ],
+            "yAxis": { "label": "Requests / hour" }
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 4,
+        "width": 6,
+        "height": 8,
+        "widget": {
+          "title": "Response Latency (P50 / P95 / P99)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"cloudfunctions.googleapis.com/function/execution_times\" resource.type=\"cloud_function\" resource.label.function_name=\"chat\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_50"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "legendTemplate": "P50"
+              },
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"cloudfunctions.googleapis.com/function/execution_times\" resource.type=\"cloud_function\" resource.label.function_name=\"chat\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_95"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "legendTemplate": "P95"
+              },
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"cloudfunctions.googleapis.com/function/execution_times\" resource.type=\"cloud_function\" resource.label.function_name=\"chat\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_99"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "legendTemplate": "P99"
+              }
+            ],
+            "yAxis": { "label": "Latency (ms)" }
+          }
+        }
+      },
+      {
+        "yPos": 12,
+        "width": 6,
+        "height": 8,
+        "widget": {
+          "title": "Tool Usage (calls per hour)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesQueryLanguage": "fetch cloud_function | metric 'logging.googleapis.com/user/agent_request_count' | align rate(1h) | group_by [metric.toolName], [value_agent_request_count_aggregate: aggregate(value.agent_request_count)]"
+                },
+                "plotType": "STACKED_BAR"
+              }
+            ],
+            "yAxis": { "label": "Tool calls / hour" }
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 12,
+        "width": 6,
+        "height": 8,
+        "widget": {
+          "title": "Error Rate",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_error_count\" resource.type=\"cloud_function\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_RATE"
+                    }
+                  }
+                },
+                "plotType": "LINE"
+              }
+            ],
+            "yAxis": { "label": "Errors / 5 min" }
+          }
+        }
+      },
+      {
+        "yPos": 20,
+        "width": 12,
+        "height": 8,
+        "widget": {
+          "title": "Feedback Ratings Over Time",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/user_feedback_count\" resource.type=\"cloud_function\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["metric.label.rating"]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR"
+              }
+            ],
+            "yAxis": { "label": "Ratings / hour" }
+          }
+        }
+      },
+      {
+        "yPos": 28,
+        "width": 12,
+        "height": 4,
+        "widget": {
+          "title": "Recent Agent Logs",
+          "logsPanel": {
+            "filter": "jsonPayload.message=\"agent_request_complete\" OR jsonPayload.message=\"user_feedback\"",
+            "resourceNames": ["projects/${PROJECT_ID}"]
+          }
+        }
+      }
+    ]
+  }
+}
