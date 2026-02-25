@@ -28,11 +28,10 @@
     msg.className = "bubble-text";
     msg.textContent =
       "Hey! I'm your PartsSource Repair Intelligence Agent — think of me as " +
-      "the colleague who always has the service manual open AND can order the " +
-      "part for you.\n\n" +
+      "the colleague who always has the service manual open.\n\n" +
       "Tell me what equipment you're working on — make, model, error codes, " +
       "symptoms, asset tag, anything you've got. I'll pull up the manual, " +
-      "check live inventory, and get you what you need.";
+      "find the right part, and walk you through the repair.";
     bubble.appendChild(msg);
 
     chatMessages.appendChild(bubble);
@@ -242,10 +241,7 @@
       getManualSection: "&#x1F4C4;",
       searchParts: "&#x1F527;",
       getSuppliers: "&#x1F4E6;",
-      checkInventory: "&#x1F4B0;",
       getRepairGuide: "&#x1F6E0;",
-      createWorkOrder: "&#x1F4DD;",
-      createOrderRequest: "&#x1F6D2;",
     };
     return icons[name] || "&#x2699;";
   }
@@ -259,10 +255,7 @@
       getManualSection: "Reading manual section",
       searchParts: "Searching parts catalog",
       getSuppliers: "Getting supplier data",
-      checkInventory: "Checking live inventory",
       getRepairGuide: "Loading repair guide",
-      createWorkOrder: "Creating work order",
-      createOrderRequest: "Placing order",
     };
     return labels[name] || name;
   }
@@ -343,12 +336,7 @@
 
     // Recommended part card
     if (data.recommendedPart) {
-      bubble.appendChild(renderPartCard(data.recommendedPart, "Recommended Part", data));
-    }
-
-    // Live inventory / pricing table
-    if (data.inventory && data.inventory.length > 0) {
-      bubble.appendChild(renderInventoryTable(data.inventory, data.recommendedPart, data));
+      bubble.appendChild(renderPartCard(data.recommendedPart, "Recommended Part"));
     }
 
     // Alternative parts
@@ -366,16 +354,6 @@
       });
 
       bubble.appendChild(altsDiv);
-    }
-
-    // Work order created
-    if (data.workOrderId) {
-      bubble.appendChild(renderWorkOrderBadge(data.workOrderId));
-    }
-
-    // Order placed
-    if (data.orderRequestId) {
-      bubble.appendChild(renderOrderBadge(data.orderRequestId));
     }
 
     // Confidence badge
@@ -428,113 +406,9 @@
     return card;
   }
 
-  // ---- Live inventory table ----
-
-  function renderInventoryTable(inventory, recommendedPart, fullData) {
-    var section = document.createElement("div");
-    section.className = "inventory-section";
-
-    var header = document.createElement("div");
-    header.className = "refs-header";
-    header.textContent = "Live Inventory & Pricing";
-    section.appendChild(header);
-
-    var table = document.createElement("table");
-    table.className = "inventory-table";
-
-    table.innerHTML =
-      '<thead><tr>' +
-        '<th>Supplier</th>' +
-        '<th>Price</th>' +
-        '<th>Stock</th>' +
-        '<th>Lead Time</th>' +
-        '<th>Type</th>' +
-        '<th></th>' +
-      '</tr></thead>';
-
-    var tbody = document.createElement("tbody");
-
-    inventory.forEach(function (inv) {
-      var tr = document.createElement("tr");
-      var stockClass = inv.inStock ? "stock-available" : "stock-out";
-      var stockText = inv.inStock ? inv.quantityAvailable + " avail" : "Out of stock";
-      var typeLabel = inv.isOEM ? "OEM" : "Aftermarket";
-      var typeClass = inv.isOEM ? "type-oem" : "type-aftermarket";
-      var contractBadge = inv.contractPricing ? ' <span class="badge-contract">Contract</span>' : '';
-
-      tr.innerHTML =
-        '<td>' + escapeHtml(inv.supplierName) + contractBadge + '</td>' +
-        '<td class="mono">$' + inv.unitPrice.toLocaleString() + '</td>' +
-        '<td class="' + stockClass + '">' + stockText + '</td>' +
-        '<td>' + inv.leadTimeDays + ' day' + (inv.leadTimeDays !== 1 ? 's' : '') + '</td>' +
-        '<td><span class="badge ' + typeClass + '">' + typeLabel + '</span></td>' +
-        '<td></td>';
-
-      if (inv.inStock) {
-        var addBtn = document.createElement("button");
-        addBtn.className = "add-to-cart-btn";
-        addBtn.type = "button";
-        addBtn.textContent = "Add to Cart";
-        addBtn.addEventListener("click", function () {
-          handleAddToCart(inv, recommendedPart, fullData);
-        });
-        tr.lastElementChild.appendChild(addBtn);
-      }
-
-      tbody.appendChild(tr);
-    });
-
-    table.appendChild(tbody);
-    section.appendChild(table);
-
-    return section;
-  }
-
-  // ---- Add to Cart handler ----
-
-  function handleAddToCart(inv, part, fullData) {
-    if (!part) return;
-
-    var orderMsg =
-      "Order 1x " + part.partNumber + " (" + part.name + ") from " +
-      inv.supplierName + " at $" + inv.unitPrice;
-
-    if (fullData && fullData.equipmentAsset) {
-      orderMsg += " for asset " + fullData.equipmentAsset.assetId;
-    }
-    if (fullData && fullData.workOrderId) {
-      orderMsg += ", work order " + fullData.workOrderId;
-    }
-
-    chatInput.value = orderMsg;
-    chatInput.focus();
-    chatInput.dispatchEvent(new Event("input"));
-    handleSend();
-  }
-
-  // ---- Work order & order badges ----
-
-  function renderWorkOrderBadge(workOrderId) {
-    var el = document.createElement("div");
-    el.className = "action-badge work-order-badge";
-    el.innerHTML =
-      '<span class="action-badge-icon">&#x1F4DD;</span>' +
-      '<span class="action-badge-text">Work Order Created: <span class="mono">' + escapeHtml(workOrderId) + '</span></span>';
-    return el;
-  }
-
-  function renderOrderBadge(orderId) {
-    var el = document.createElement("div");
-    el.className = "action-badge order-badge";
-    el.innerHTML =
-      '<span class="action-badge-icon">&#x1F6D2;</span>' +
-      '<span class="action-badge-text">Order Placed: <span class="mono">' + escapeHtml(orderId) + '</span></span>';
-    return el;
-  }
-
   // ---- Part cards ----
 
-  function renderPartCard(part, label, fullData) {
+  function renderPartCard(part, label) {
     var card = document.createElement("div");
     card.className = "bubble-part-card";
 
@@ -544,23 +418,6 @@
       '<div class="part-card-row"><span class="part-card-label">P/N</span><span class="mono">' + escapeHtml(part.partNumber) + '</span></div>' +
       '<div class="part-card-row"><span class="part-card-label">Avg Price</span><span>$' + (part.avgPrice || 0).toLocaleString() + '</span></div>' +
       '<div class="part-card-row"><span class="part-card-label">Criticality</span><span class="badge badge-' + escapeHtml(part.criticality || 'standard') + '">' + escapeHtml(part.criticality || 'standard') + '</span></div>';
-
-    if (fullData && fullData.equipmentAsset && !fullData.workOrderId) {
-      var woBtn = document.createElement("button");
-      woBtn.className = "work-order-btn";
-      woBtn.type = "button";
-      woBtn.textContent = "Create Work Order";
-      woBtn.addEventListener("click", function () {
-        var woMsg = "Create a work order for " +
-          fullData.equipmentAsset.assetId +
-          " — diagnosis: " + (fullData.diagnosis || fullData.message).substring(0, 200);
-        chatInput.value = woMsg;
-        chatInput.focus();
-        chatInput.dispatchEvent(new Event("input"));
-        handleSend();
-      });
-      card.appendChild(woBtn);
-    }
 
     return card;
   }
@@ -654,19 +511,9 @@
           ? '<div class="trace-log-line trace-success">Asset found</div>'
           : '<div class="trace-log-line trace-warn">Asset not found</div>';
       }
-      if (tc.toolName === 'checkInventory') {
-        html += '<div class="trace-log-line">' + tc.resultCount + ' supplier' + (tc.resultCount !== 1 ? 's' : '') + ' with pricing</div>';
-      }
       if (tc.toolName === 'getRepairHistory') {
         html += '<div class="trace-log-line">' + tc.resultCount + ' past work order' + (tc.resultCount !== 1 ? 's' : '') + '</div>';
       }
-      if (tc.toolName === 'createWorkOrder') {
-        html += '<div class="trace-log-line trace-success">Work order created</div>';
-      }
-      if (tc.toolName === 'createOrderRequest') {
-        html += '<div class="trace-log-line trace-success">Purchase order placed</div>';
-      }
-
       html += '<div class="trace-log-line trace-result-line">&rarr; <strong>' + tc.resultCount + '</strong> result' + (tc.resultCount !== 1 ? 's' : '') + '</div>';
       html += '</div>';
     });

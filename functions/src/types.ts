@@ -114,24 +114,6 @@ export interface EquipmentAsset {
 }
 
 // ---------------------------------------------------------------------------
-// Inventory (live stock & pricing per supplier)
-// ---------------------------------------------------------------------------
-
-export interface InventoryRecord {
-  partId: string;
-  partNumber: string;
-  supplierId: string;
-  supplierName: string;
-  inStock: boolean;
-  quantityAvailable: number;
-  unitPrice: number;           // current price (may differ from avgPrice)
-  leadTimeDays: number;        // delivery estimate
-  lastUpdated: string;         // ISO timestamp
-  isOEM: boolean;
-  contractPricing: boolean;    // hospital has negotiated rate
-}
-
-// ---------------------------------------------------------------------------
 // Work orders
 // ---------------------------------------------------------------------------
 
@@ -156,28 +138,6 @@ export interface WorkOrder {
   laborHours: number;
   totalCost: number;
   rootCause: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Order requests (cart / PO line items)
-// ---------------------------------------------------------------------------
-
-export interface OrderRequest {
-  orderId: string;
-  partId: string;
-  partNumber: string;
-  partName: string;
-  supplierId: string;
-  supplierName: string;
-  quantity: number;
-  unitPrice: number;
-  totalPrice: number;
-  workOrderId: string | null;
-  assetId: string | null;
-  status: "cart" | "pending_approval" | "approved" | "ordered" | "shipped" | "delivered";
-  createdAt: string;
-  estimatedDelivery: string;
-  requestedBy: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -269,15 +229,6 @@ export interface ChatAgentResponse {
   reasoning: string | null;
   warnings: string[];
   // --- PartsSource business fields ---
-  inventory: Array<{
-    supplierName: string;
-    unitPrice: number;
-    quantityAvailable: number;
-    leadTimeDays: number;
-    inStock: boolean;
-    isOEM: boolean;
-    contractPricing: boolean;
-  }>;
   equipmentAsset: {
     assetId: string;
     assetTag: string;
@@ -287,7 +238,5 @@ export interface ChatAgentResponse {
     warrantyExpiry: string;
     status: string;
   } | null;
-  workOrderId: string | null;
-  orderRequestId: string | null;
 }
 

@@ -19,10 +19,7 @@ function buildConversation(
 
 // Default business fields for test mock responses
 const EMPTY_BIZ = {
-  inventory: [] as ChatAgentResponse["inventory"],
   equipmentAsset: null,
-  workOrderId: null,
-  orderRequestId: null,
 };
 
 function assertValidResponse(response: ChatAgentResponse): void {

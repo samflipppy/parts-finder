@@ -11,7 +11,7 @@ dotenv.config();
 
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { Part, Supplier, RepairGuide, ServiceManual, EquipmentAsset, InventoryRecord, WorkOrder } from "./types";
+import { Part, Supplier, RepairGuide, ServiceManual, EquipmentAsset, WorkOrder } from "./types";
 import { extraRepairGuides } from "./__generated__/repair-guides-extra";
 
 initializeApp();
@@ -1423,43 +1423,6 @@ const equipmentAssets: EquipmentAsset[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Inventory (live stock & pricing per supplier per part)
-// ---------------------------------------------------------------------------
-
-const inventory: InventoryRecord[] = [
-  // Fan Module Assembly — DRG-8306750
-  { partId: "part_001", partNumber: "DRG-8306750", supplierId: "sup_002", supplierName: "ClinicalSource OEM", inStock: true, quantityAvailable: 4, unitPrice: 1895, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: true },
-  { partId: "part_001", partNumber: "DRG-8306750", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 7, unitPrice: 1750, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
-  { partId: "part_001", partNumber: "DRG-8306750", supplierId: "sup_004", supplierName: "National Medical Supply", inStock: true, quantityAvailable: 2, unitPrice: 1820, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: true },
-  { partId: "part_001", partNumber: "DRG-8306750", supplierId: "sup_007", supplierName: "QuickShip Medical", inStock: true, quantityAvailable: 1, unitPrice: 1680, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
-
-  // Flow Sensor — DRG-8404500
-  { partId: "part_002", partNumber: "DRG-8404500", supplierId: "sup_002", supplierName: "ClinicalSource OEM", inStock: true, quantityAvailable: 12, unitPrice: 385, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: true },
-  { partId: "part_002", partNumber: "DRG-8404500", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 20, unitPrice: 340, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
-
-  // Display Panel — PH-453564201591
-  { partId: "part_006", partNumber: "PH-453564201591", supplierId: "sup_005", supplierName: "Heartland HTM Supply", inStock: true, quantityAvailable: 3, unitPrice: 2100, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: true },
-  { partId: "part_006", partNumber: "PH-453564201591", supplierId: "sup_006", supplierName: "PrecisionMed Parts", inStock: false, quantityAvailable: 0, unitPrice: 2350, leadTimeDays: 7, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: false },
-
-  // SpO2 Module — PH-M1020B
-  { partId: "part_007", partNumber: "PH-M1020B", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 8, unitPrice: 920, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
-  { partId: "part_007", partNumber: "PH-M1020B", supplierId: "sup_006", supplierName: "PrecisionMed Parts", inStock: true, quantityAvailable: 5, unitPrice: 1050, leadTimeDays: 3, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: true },
-
-  // X-Ray Tube — GE-2275207
-  { partId: "part_011", partNumber: "GE-2275207", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 1, unitPrice: 42500, leadTimeDays: 5, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: true },
-  { partId: "part_011", partNumber: "GE-2275207", supplierId: "sup_006", supplierName: "PrecisionMed Parts", inStock: true, quantityAvailable: 2, unitPrice: 48000, leadTimeDays: 3, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: false },
-  { partId: "part_011", partNumber: "GE-2275207", supplierId: "sup_003", supplierName: "BioEquip Solutions", inStock: false, quantityAvailable: 0, unitPrice: 39800, leadTimeDays: 14, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
-
-  // Zoll Battery Pack — ZOLL-8019-0535-01
-  { partId: "part_016", partNumber: "ZOLL-8019-0535-01", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 15, unitPrice: 245, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
-  { partId: "part_016", partNumber: "ZOLL-8019-0535-01", supplierId: "sup_005", supplierName: "Heartland HTM Supply", inStock: true, quantityAvailable: 8, unitPrice: 260, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: true },
-
-  // Exhalation Valve — DRG-8412960
-  { partId: "part_003", partNumber: "DRG-8412960", supplierId: "sup_002", supplierName: "ClinicalSource OEM", inStock: true, quantityAvailable: 6, unitPrice: 475, leadTimeDays: 2, lastUpdated: "2026-02-24T10:00:00Z", isOEM: true, contractPricing: true },
-  { partId: "part_003", partNumber: "DRG-8412960", supplierId: "sup_001", supplierName: "MedParts Direct", inStock: true, quantityAvailable: 10, unitPrice: 420, leadTimeDays: 1, lastUpdated: "2026-02-24T10:00:00Z", isOEM: false, contractPricing: false },
-];
-
-// ---------------------------------------------------------------------------
 // Work orders (historical repair records)
 // ---------------------------------------------------------------------------
 
@@ -1626,17 +1589,6 @@ async function seed(): Promise<void> {
   await assetBatch.commit();
   console.log("  Equipment assets seeded successfully.\n");
 
-  // Seed inventory records
-  console.log(`Seeding ${inventory.length} inventory records...`);
-  const invBatch = db.batch();
-  for (const inv of inventory) {
-    const docId = `${inv.partId}_${inv.supplierId}`;
-    const ref = db.collection("inventory").doc(docId);
-    invBatch.set(ref, inv);
-  }
-  await invBatch.commit();
-  console.log("  Inventory records seeded successfully.\n");
-
   // Seed work orders (historical)
   console.log(`Seeding ${workOrders.length} work orders...`);
   const woBatch = db.batch();
@@ -1653,7 +1605,6 @@ async function seed(): Promise<void> {
   console.log(`  - ${allGuides.length} repair guides`);
   console.log(`  - ${serviceManuals.length} service manuals`);
   console.log(`  - ${equipmentAssets.length} equipment assets`);
-  console.log(`  - ${inventory.length} inventory records`);
   console.log(`  - ${workOrders.length} work orders`);
 }
 

@@ -11,10 +11,7 @@ import {
   getSuppliers,
   getRepairGuide,
   lookupAsset,
-  checkInventory,
   getRepairHistory,
-  createWorkOrder,
-  createOrderRequest,
 } from "./tools";
 import {
   MetricsCollector,
@@ -78,17 +75,6 @@ export const ChatAgentResponseSchema = z.object({
   confidence: z.enum(["high", "medium", "low"]).nullable(),
   reasoning: z.string().nullable(),
   warnings: z.array(z.string()),
-  inventory: z.array(
-    z.object({
-      supplierName: z.string(),
-      unitPrice: z.number(),
-      quantityAvailable: z.number(),
-      leadTimeDays: z.number(),
-      inStock: z.boolean(),
-      isOEM: z.boolean(),
-      contractPricing: z.boolean(),
-    })
-  ),
   equipmentAsset: z
     .object({
       assetId: z.string(),
@@ -100,8 +86,6 @@ export const ChatAgentResponseSchema = z.object({
       status: z.string(),
     })
     .nullable(),
-  workOrderId: z.string().nullable(),
-  orderRequestId: z.string().nullable(),
 });
 
 const StreamChunkSchema = z.discriminatedUnion("type", [
@@ -118,18 +102,12 @@ const ALL_TOOLS = [
   getSuppliers,
   getRepairGuide,
   lookupAsset,
-  checkInventory,
   getRepairHistory,
-  createWorkOrder,
-  createOrderRequest,
 ];
 
 // Default empty business fields for error/fallback responses
 const EMPTY_BUSINESS_FIELDS = {
-  inventory: [] as ChatAgentResponse["inventory"],
   equipmentAsset: null,
-  workOrderId: null,
-  orderRequestId: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -216,11 +194,10 @@ export const diagnosticPartnerChat = ai.defineFlow(
         "response.type": result.type,
         "part.found": !!(result.recommendedPart),
         "confidence": result.confidence ?? "null",
-        "tools.count": result.inventory?.length ?? 0,
       });
       span.setStatus({ code: SpanStatusCode.OK });
       console.log(
-        `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}, inventory: ${result.inventory?.length ?? 0}`
+        `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}`
       );
 
       setActiveChunkEmitter(null);
