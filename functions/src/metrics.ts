@@ -126,6 +126,11 @@ export class MetricsCollector {
     _activeChunkEmitter?.({ type: "tool_done", toolName, resultCount, latencyMs });
   }
 
+  /** How many tool calls have been recorded so far. */
+  getToolCallCount(): number {
+    return this.toolCalls.length;
+  }
+
   /** Produce the final metrics snapshot after the agent flow completes. */
   finalize(input: string, response: AgentResponse): RequestMetrics {
     const totalLatencyMs = Date.now() - this.startTime;

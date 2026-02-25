@@ -15,6 +15,7 @@ import {
 } from "./tools";
 import {
   MetricsCollector,
+  getActiveCollector,
   setActiveCollector,
   setActiveChunkEmitter,
   saveMetrics,
@@ -93,6 +94,24 @@ const StreamChunkSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text_chunk"), text: z.string() }),
 ]);
 
+// ---------------------------------------------------------------------------
+// Zero-tool-call detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true if the model tried to answer without calling any tools.
+ * Clarifications (asking the user for more info) are fine with 0 tools.
+ * Anything else — diagnosis, guidance, photo_analysis — needs tool data.
+ */
+function shouldRetryWithoutTools(
+  result: ChatAgentResponse,
+  toolCount: number
+): boolean {
+  if (toolCount > 0) return false;
+  if (result.type === "clarification") return false;
+  return true;
+}
+
 // All tools available to the agent
 const ALL_TOOLS = [
   listManualSections,
@@ -148,15 +167,21 @@ export const diagnosticPartnerChat = ai.defineFlow(
       attributes: { "messages.count": input.messages.length },
     });
 
-    const MAX_RETRIES = 2;
+    const MAX_RETRIES = 3;
+    let forceToolPrompt = false;
 
     try {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
+        // On retry after zero-tool-call, append an instruction forcing tool usage
+        const effectivePrompt = forceToolPrompt
+          ? `${currentMessage.content}\n\n[SYSTEM: You MUST call your tools (lookupAsset, searchManual, searchParts, etc.) to research this equipment BEFORE responding. Do NOT respond without calling tools first. Call at least searchManual and searchParts.]`
+          : currentMessage.content;
+
         const { response: responsePromise, stream } = ai.generateStream({
           system: SYSTEM_PROMPT,
           messages: genkitHistory,
-          prompt: currentMessage.content,
+          prompt: effectivePrompt,
           tools: ALL_TOOLS,
           output: { schema: ChatAgentResponseSchema },
           maxTurns: 15,
@@ -194,6 +219,14 @@ export const diagnosticPartnerChat = ai.defineFlow(
           };
         }
 
+        // Guard: if the model tried to answer without calling any tools, retry
+        const toolCount = getActiveCollector()?.getToolCallCount() ?? 0;
+        if (!forceToolPrompt && attempt < MAX_RETRIES && shouldRetryWithoutTools(result, toolCount)) {
+          console.warn(`[agent] Model returned type="${result.type}" with 0 tool calls (attempt ${attempt}/${MAX_RETRIES}). Retrying with forced tool prompt...`);
+          forceToolPrompt = true;
+          continue;
+        }
+
         span.setAttributes({
           "response.type": result.type,
           "part.found": !!(result.recommendedPart),
@@ -201,7 +234,7 @@ export const diagnosticPartnerChat = ai.defineFlow(
         });
         span.setStatus({ code: SpanStatusCode.OK });
         console.log(
-          `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}`
+          `[agent] Complete — type: ${result.type}, part: ${result.recommendedPart?.partNumber ?? "none"}, tools: ${toolCount}`
         );
 
         setActiveChunkEmitter(null);
