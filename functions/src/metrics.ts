@@ -151,6 +151,14 @@ export class MetricsCollector {
       filterSteps,
       ragTrace,
     });
+    // Structured log for Cloud Monitoring per-tool metrics
+    console.log(JSON.stringify({
+      severity: "INFO",
+      message: "agent_tool_call",
+      "logging.googleapis.com/labels": { type: "agent_tool_metrics" },
+      tool: { name: toolName, latencyMs, resultCount },
+    }));
+
     _activeChunkEmitter?.({ type: "tool_done", toolName, resultCount, latencyMs });
   }
 

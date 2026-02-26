@@ -26,13 +26,24 @@ Write-Host "Setting up PartsFinder monitoring for project: $PROJECT_ID"
 
 Write-Host "Creating log-based metrics..."
 
-# Metric: Agent request latency (distribution)
+# Metric: Agent request latency (distribution — fixed with proper valueExtractor)
+try { gcloud logging metrics delete agent_request_latency --quiet 2>$null } catch {}
+$metricRequestLatency = @'
+{
+  "name": "agent_request_latency",
+  "description": "Agent request total latency in ms (distribution)",
+  "filter": "jsonPayload.message=\"agent_request_complete\"",
+  "metricDescriptor": { "metricKind": "DELTA", "valueType": "DISTRIBUTION" },
+  "valueExtractor": "EXTRACT(jsonPayload.agent.totalLatencyMs)",
+  "bucketOptions": { "exponentialBuckets": { "numFiniteBuckets": 14, "growthFactor": 2, "scale": 100 } }
+}
+'@
+$tmpFile = [System.IO.Path]::GetTempFileName()
+$metricRequestLatency | Out-File -FilePath $tmpFile -Encoding utf8
 try {
-    gcloud logging metrics create agent_request_latency `
-        --description="Agent request total latency in ms" `
-        --log-filter='jsonPayload.message="agent_request_complete"' `
-        --bucket-name="agent_request_latency" 2>$null
+    gcloud logging metrics create agent_request_latency --config-from-file=$tmpFile 2>$null
 } catch { Write-Host "  agent_request_latency already exists" }
+Remove-Item $tmpFile -ErrorAction SilentlyContinue
 
 # Metric: Agent request count (counter by confidence level)
 $metricRequestCount = @'
@@ -198,6 +209,95 @@ $metricRequestByModel | Out-File -FilePath $tmpFile -Encoding utf8
 try {
     gcloud logging metrics create agent_request_by_model --config-from-file=$tmpFile 2>$null
 } catch { Write-Host "  agent_request_by_model already exists" }
+Remove-Item $tmpFile -ErrorAction SilentlyContinue
+
+# Metric: End-to-end agent latency (distribution for percentile charts)
+$metricTotalLatency = @'
+{
+  "name": "agent_total_latency",
+  "description": "End-to-end agent request latency in ms (distribution)",
+  "filter": "jsonPayload.message=\"agent_request_complete\"",
+  "metricDescriptor": { "metricKind": "DELTA", "valueType": "DISTRIBUTION" },
+  "valueExtractor": "EXTRACT(jsonPayload.agent.totalLatencyMs)",
+  "bucketOptions": { "exponentialBuckets": { "numFiniteBuckets": 14, "growthFactor": 2, "scale": 100 } }
+}
+'@
+$tmpFile = [System.IO.Path]::GetTempFileName()
+$metricTotalLatency | Out-File -FilePath $tmpFile -Encoding utf8
+try {
+    gcloud logging metrics create agent_total_latency --config-from-file=$tmpFile 2>$null
+} catch { Write-Host "  agent_total_latency already exists" }
+Remove-Item $tmpFile -ErrorAction SilentlyContinue
+
+# Metric: Part found rate (counter with partFound label — true/false)
+$metricPartFound = @'
+{
+  "name": "agent_part_found",
+  "description": "Agent request count by part-found status (true/false)",
+  "filter": "jsonPayload.message=\"agent_request_complete\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      { "key": "part_found", "description": "Whether a part was found (true/false)", "valueType": "STRING" }
+    ]
+  },
+  "labelExtractors": { "part_found": "EXTRACT(jsonPayload.agent.partFound)" }
+}
+'@
+$tmpFile = [System.IO.Path]::GetTempFileName()
+$metricPartFound | Out-File -FilePath $tmpFile -Encoding utf8
+try {
+    gcloud logging metrics create agent_part_found --config-from-file=$tmpFile 2>$null
+} catch { Write-Host "  agent_part_found already exists" }
+Remove-Item $tmpFile -ErrorAction SilentlyContinue
+
+# Metric: Per-tool latency (distribution from agent_tool_call logs)
+$metricToolLatency = @'
+{
+  "name": "agent_tool_latency",
+  "description": "Individual tool call latency in ms",
+  "filter": "jsonPayload.message=\"agent_tool_call\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "DISTRIBUTION",
+    "labels": [
+      { "key": "tool_name", "description": "Tool name (searchParts, getSuppliers, etc.)", "valueType": "STRING" }
+    ]
+  },
+  "valueExtractor": "EXTRACT(jsonPayload.tool.latencyMs)",
+  "labelExtractors": { "tool_name": "EXTRACT(jsonPayload.tool.name)" },
+  "bucketOptions": { "exponentialBuckets": { "numFiniteBuckets": 12, "growthFactor": 2, "scale": 10 } }
+}
+'@
+$tmpFile = [System.IO.Path]::GetTempFileName()
+$metricToolLatency | Out-File -FilePath $tmpFile -Encoding utf8
+try {
+    gcloud logging metrics create agent_tool_latency --config-from-file=$tmpFile 2>$null
+} catch { Write-Host "  agent_tool_latency already exists" }
+Remove-Item $tmpFile -ErrorAction SilentlyContinue
+
+# Metric: Per-tool usage count (counter by tool name)
+$metricToolUsage = @'
+{
+  "name": "agent_tool_usage",
+  "description": "Count of individual tool calls by tool name",
+  "filter": "jsonPayload.message=\"agent_tool_call\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      { "key": "tool_name", "description": "Tool name (searchParts, getSuppliers, etc.)", "valueType": "STRING" }
+    ]
+  },
+  "labelExtractors": { "tool_name": "EXTRACT(jsonPayload.tool.name)" }
+}
+'@
+$tmpFile = [System.IO.Path]::GetTempFileName()
+$metricToolUsage | Out-File -FilePath $tmpFile -Encoding utf8
+try {
+    gcloud logging metrics create agent_tool_usage --config-from-file=$tmpFile 2>$null
+} catch { Write-Host "  agent_tool_usage already exists" }
 Remove-Item $tmpFile -ErrorAction SilentlyContinue
 
 Write-Host "Log-based metrics created."

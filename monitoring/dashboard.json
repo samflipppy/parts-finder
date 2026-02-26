@@ -4,30 +4,23 @@
     "columns": 12,
     "tiles": [
       {
-        "width": 6,
-        "height": 4,
+        "yPos": 0,
+        "width": 12,
+        "height": 2,
         "widget": {
-          "title": "Avg Star Rating",
-          "scorecard": {
-            "timeSeriesQuery": {
-              "timeSeriesFilter": {
-                "filter": "metric.type=\"logging.googleapis.com/user/user_feedback_rating\"",
-                "aggregation": {
-                  "alignmentPeriod": "86400s",
-                  "perSeriesAligner": "ALIGN_PERCENTILE_50",
-                  "crossSeriesReducer": "REDUCE_MEAN"
-                }
-              }
-            }
+          "title": "",
+          "text": {
+            "content": "## Key Performance Indicators",
+            "format": "MARKDOWN"
           }
         }
       },
       {
-        "xPos": 6,
-        "width": 6,
+        "yPos": 2,
+        "width": 3,
         "height": 4,
         "widget": {
-          "title": "Total Agent Requests",
+          "title": "Total Requests (24h)",
           "scorecard": {
             "timeSeriesQuery": {
               "timeSeriesFilter": {
@@ -43,7 +36,104 @@
         }
       },
       {
-        "yPos": 4,
+        "xPos": 3,
+        "yPos": 2,
+        "width": 3,
+        "height": 4,
+        "widget": {
+          "title": "Part Found Rate (24h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilterRatio": {
+                "numerator": {
+                  "filter": "metric.type=\"logging.googleapis.com/user/agent_part_found\" metric.label.part_found=\"true\"",
+                  "aggregation": {
+                    "alignmentPeriod": "86400s",
+                    "perSeriesAligner": "ALIGN_SUM",
+                    "crossSeriesReducer": "REDUCE_SUM"
+                  }
+                },
+                "denominator": {
+                  "filter": "metric.type=\"logging.googleapis.com/user/agent_part_found\"",
+                  "aggregation": {
+                    "alignmentPeriod": "86400s",
+                    "perSeriesAligner": "ALIGN_SUM",
+                    "crossSeriesReducer": "REDUCE_SUM"
+                  }
+                }
+              }
+            },
+            "thresholds": [
+              { "value": 0.7, "color": "YELLOW", "direction": "BELOW" },
+              { "value": 0.5, "color": "RED", "direction": "BELOW" }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 2,
+        "width": 3,
+        "height": 4,
+        "widget": {
+          "title": "Avg Latency (24h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/agent_total_latency\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                  "crossSeriesReducer": "REDUCE_MEAN"
+                }
+              }
+            },
+            "thresholds": [
+              { "value": 5000, "color": "YELLOW", "direction": "ABOVE" },
+              { "value": 10000, "color": "RED", "direction": "ABOVE" }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 9,
+        "yPos": 2,
+        "width": 3,
+        "height": 4,
+        "widget": {
+          "title": "Avg Star Rating (24h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"logging.googleapis.com/user/user_feedback_rating\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                  "crossSeriesReducer": "REDUCE_MEAN"
+                }
+              }
+            },
+            "thresholds": [
+              { "value": 3.0, "color": "YELLOW", "direction": "BELOW" },
+              { "value": 2.0, "color": "RED", "direction": "BELOW" }
+            ]
+          }
+        }
+      },
+      {
+        "yPos": 6,
+        "width": 12,
+        "height": 2,
+        "widget": {
+          "title": "",
+          "text": {
+            "content": "## Agent Quality & Accuracy",
+            "format": "MARKDOWN"
+          }
+        }
+      },
+      {
+        "yPos": 8,
         "width": 6,
         "height": 8,
         "widget": {
@@ -71,17 +161,66 @@
       },
       {
         "xPos": 6,
-        "yPos": 4,
+        "yPos": 8,
         "width": 6,
         "height": 8,
         "widget": {
-          "title": "Response Latency (P50 / P95 / P99)",
+          "title": "Part Found Rate Over Time",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilterRatio": {
+                    "numerator": {
+                      "filter": "metric.type=\"logging.googleapis.com/user/agent_part_found\" metric.label.part_found=\"true\"",
+                      "aggregation": {
+                        "alignmentPeriod": "3600s",
+                        "perSeriesAligner": "ALIGN_SUM",
+                        "crossSeriesReducer": "REDUCE_SUM"
+                      }
+                    },
+                    "denominator": {
+                      "filter": "metric.type=\"logging.googleapis.com/user/agent_part_found\"",
+                      "aggregation": {
+                        "alignmentPeriod": "3600s",
+                        "perSeriesAligner": "ALIGN_SUM",
+                        "crossSeriesReducer": "REDUCE_SUM"
+                      }
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "legendTemplate": "Part Found Rate"
+              }
+            ],
+            "yAxis": { "label": "Rate (0-1)" }
+          }
+        }
+      },
+      {
+        "yPos": 16,
+        "width": 12,
+        "height": 2,
+        "widget": {
+          "title": "",
+          "text": {
+            "content": "## Performance & Reliability",
+            "format": "MARKDOWN"
+          }
+        }
+      },
+      {
+        "yPos": 18,
+        "width": 6,
+        "height": 8,
+        "widget": {
+          "title": "End-to-End Latency (P50 / P95 / P99)",
           "xyChart": {
             "dataSets": [
               {
                 "timeSeriesQuery": {
                   "timeSeriesFilter": {
-                    "filter": "metric.type=\"cloudfunctions.googleapis.com/function/execution_times\" resource.label.function_name=\"chat\"",
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_total_latency\"",
                     "aggregation": {
                       "alignmentPeriod": "300s",
                       "perSeriesAligner": "ALIGN_PERCENTILE_50"
@@ -94,7 +233,7 @@
               {
                 "timeSeriesQuery": {
                   "timeSeriesFilter": {
-                    "filter": "metric.type=\"cloudfunctions.googleapis.com/function/execution_times\" resource.label.function_name=\"chat\"",
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_total_latency\"",
                     "aggregation": {
                       "alignmentPeriod": "300s",
                       "perSeriesAligner": "ALIGN_PERCENTILE_95"
@@ -107,7 +246,7 @@
               {
                 "timeSeriesQuery": {
                   "timeSeriesFilter": {
-                    "filter": "metric.type=\"cloudfunctions.googleapis.com/function/execution_times\" resource.label.function_name=\"chat\"",
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_total_latency\"",
                     "aggregation": {
                       "alignmentPeriod": "300s",
                       "perSeriesAligner": "ALIGN_PERCENTILE_99"
@@ -123,34 +262,8 @@
         }
       },
       {
-        "yPos": 12,
-        "width": 6,
-        "height": 8,
-        "widget": {
-          "title": "Agent Requests Over Time",
-          "xyChart": {
-            "dataSets": [
-              {
-                "timeSeriesQuery": {
-                  "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/agent_request_count\"",
-                    "aggregation": {
-                      "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_SUM",
-                      "crossSeriesReducer": "REDUCE_SUM"
-                    }
-                  }
-                },
-                "plotType": "STACKED_BAR"
-              }
-            ],
-            "yAxis": { "label": "Requests / hour" }
-          }
-        }
-      },
-      {
         "xPos": 6,
-        "yPos": 12,
+        "yPos": 18,
         "width": 6,
         "height": 8,
         "widget": {
@@ -175,46 +288,74 @@
         }
       },
       {
-        "yPos": 20,
-        "width": 12,
+        "yPos": 26,
+        "width": 6,
         "height": 8,
         "widget": {
-          "title": "Feedback Ratings Over Time",
+          "title": "Tool Latency by Tool Name (P50)",
           "xyChart": {
             "dataSets": [
               {
                 "timeSeriesQuery": {
                   "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/user_feedback_count\"",
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_tool_latency\"",
                     "aggregation": {
                       "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_SUM",
-                      "crossSeriesReducer": "REDUCE_SUM",
-                      "groupByFields": ["metric.label.rating"]
+                      "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                      "crossSeriesReducer": "REDUCE_MEAN",
+                      "groupByFields": ["metric.label.tool_name"]
                     }
                   }
                 },
                 "plotType": "STACKED_BAR"
               }
             ],
-            "yAxis": { "label": "Ratings / hour" }
+            "yAxis": { "label": "Latency (ms)" }
           }
         }
       },
       {
-        "yPos": 28,
-        "width": 12,
-        "height": 4,
+        "xPos": 6,
+        "yPos": 26,
+        "width": 6,
+        "height": 8,
         "widget": {
-          "title": "LLM Model Evaluation",
+          "title": "Tool Usage Count by Tool Name",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/agent_tool_usage\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["metric.label.tool_name"]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR"
+              }
+            ],
+            "yAxis": { "label": "Calls / hour" }
+          }
+        }
+      },
+      {
+        "yPos": 34,
+        "width": 12,
+        "height": 2,
+        "widget": {
+          "title": "",
           "text": {
-            "content": "Token usage, cost tracking, and model comparison metrics. Use these to evaluate model performance over time and make data-driven decisions on model selection.",
+            "content": "## LLM Usage & Cost",
             "format": "MARKDOWN"
           }
         }
       },
       {
-        "yPos": 32,
+        "yPos": 36,
         "width": 4,
         "height": 4,
         "widget": {
@@ -235,7 +376,7 @@
       },
       {
         "xPos": 4,
-        "yPos": 32,
+        "yPos": 36,
         "width": 4,
         "height": 4,
         "widget": {
@@ -256,7 +397,7 @@
       },
       {
         "xPos": 8,
-        "yPos": 32,
+        "yPos": 36,
         "width": 4,
         "height": 4,
         "widget": {
@@ -276,11 +417,11 @@
         }
       },
       {
-        "yPos": 36,
+        "yPos": 40,
         "width": 6,
         "height": 8,
         "widget": {
-          "title": "Tokens Per Request Over Time (Input vs Output)",
+          "title": "Tokens Per Request (Input vs Output)",
           "xyChart": {
             "dataSets": [
               {
@@ -318,7 +459,7 @@
       },
       {
         "xPos": 6,
-        "yPos": 36,
+        "yPos": 40,
         "width": 6,
         "height": 8,
         "widget": {
@@ -345,82 +486,64 @@
         }
       },
       {
-        "yPos": 44,
-        "width": 6,
-        "height": 8,
+        "yPos": 48,
+        "width": 12,
+        "height": 2,
         "widget": {
-          "title": "Avg Tokens Per Request",
-          "xyChart": {
-            "dataSets": [
-              {
-                "timeSeriesQuery": {
-                  "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/agent_input_tokens\"",
-                    "aggregation": {
-                      "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_PERCENTILE_50",
-                      "crossSeriesReducer": "REDUCE_MEAN"
-                    }
-                  }
-                },
-                "plotType": "LINE",
-                "legendTemplate": "Avg Input"
-              },
-              {
-                "timeSeriesQuery": {
-                  "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/agent_output_tokens\"",
-                    "aggregation": {
-                      "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_PERCENTILE_50",
-                      "crossSeriesReducer": "REDUCE_MEAN"
-                    }
-                  }
-                },
-                "plotType": "LINE",
-                "legendTemplate": "Avg Output"
-              }
-            ],
-            "yAxis": { "label": "Avg tokens / request" }
+          "title": "",
+          "text": {
+            "content": "## User Feedback",
+            "format": "MARKDOWN"
           }
         }
       },
       {
-        "xPos": 6,
-        "yPos": 44,
-        "width": 6,
+        "yPos": 50,
+        "width": 12,
         "height": 8,
         "widget": {
-          "title": "Requests by Model (A/B Comparison)",
+          "title": "Feedback Ratings Over Time",
           "xyChart": {
             "dataSets": [
               {
                 "timeSeriesQuery": {
                   "timeSeriesFilter": {
-                    "filter": "metric.type=\"logging.googleapis.com/user/agent_request_by_model\"",
+                    "filter": "metric.type=\"logging.googleapis.com/user/user_feedback_count\"",
                     "aggregation": {
                       "alignmentPeriod": "3600s",
                       "perSeriesAligner": "ALIGN_SUM",
                       "crossSeriesReducer": "REDUCE_SUM",
-                      "groupByFields": ["metric.label.model"]
+                      "groupByFields": ["metric.label.rating"]
                     }
                   }
                 },
                 "plotType": "STACKED_BAR"
               }
             ],
-            "yAxis": { "label": "Requests / hour" }
+            "yAxis": { "label": "Ratings / hour" }
           }
         }
       },
       {
-        "yPos": 52,
+        "yPos": 58,
         "width": 12,
-        "height": 4,
+        "height": 2,
+        "widget": {
+          "title": "",
+          "text": {
+            "content": "## Recent Logs",
+            "format": "MARKDOWN"
+          }
+        }
+      },
+      {
+        "yPos": 60,
+        "width": 12,
+        "height": 6,
         "widget": {
           "title": "Recent Agent Logs",
           "logsPanel": {
-            "filter": "jsonPayload.message=\"agent_request_complete\" OR jsonPayload.message=\"user_feedback\"",
+            "filter": "jsonPayload.message=\"agent_request_complete\" OR jsonPayload.message=\"user_feedback\" OR jsonPayload.message=\"agent_tool_call\"",
             "resourceNames": ["projects/${PROJECT_ID}"]
           }
         }
