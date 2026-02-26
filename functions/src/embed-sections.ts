@@ -7,7 +7,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { genkit } from "genkit";
 import { vertexAI } from "@genkit-ai/vertexai";
 import type { ServiceManual, ManualSpecification, SectionEmbedding } from "./types";
@@ -17,8 +17,10 @@ initializeApp();
 const db = getFirestore();
 db.settings({ ignoreUndefinedProperties: true });
 
+const projectId = process.env.GCLOUD_PROJECT ?? "parts-test-93b26";
+
 const ai = genkit({
-  plugins: [vertexAI({ projectId: "parts-test-93b26", location: "us-central1" })],
+  plugins: [vertexAI({ projectId, location: "us-central1" })],
 });
 
 function buildEmbeddingText(
@@ -130,7 +132,8 @@ async function main() {
     for (const emb of chunk) {
       const docId = `${emb.manualId}_${emb.sectionId}`;
       const ref = db.collection("section_embeddings").doc(docId);
-      batch.set(ref, emb);
+      // Store embedding as a Firestore Vector for native findNearest() support
+      batch.set(ref, { ...emb, embedding: FieldValue.vector(emb.embedding) });
     }
     await batch.commit();
     console.log(`   Wrote docs ${i + 1}–${i + chunk.length} of ${embeddings.length}`);

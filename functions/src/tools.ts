@@ -1,9 +1,8 @@
 import { z } from "genkit";
-import { getFirestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { trace } from "@opentelemetry/api";
 import { ai } from "./ai";
 import { getActiveCollector, type FilterStep, type RAGTraceData } from "./metrics";
-import { cosineSimilarity } from "./utils";
 import type { Part, Supplier, RepairGuide, ServiceManual, SectionEmbedding, EquipmentAsset, WorkOrder } from "./types";
 
 // Re-export for external consumers
@@ -93,7 +92,10 @@ const ManualTOCSchema = z.object({
 // ---------------------------------------------------------------------------
 
 const TOP_K = 5;
-const SIMILARITY_THRESHOLD = 0.3;
+// COSINE distance: 0 = identical, 2 = opposite. Threshold 1.7 ≈ similarity 0.3.
+const DISTANCE_THRESHOLD = 1.7;
+// Request extra results to account for client-side equipmentName post-filtering
+const FIND_NEAREST_LIMIT = TOP_K * 3;
 
 async function embedQuery(text: string): Promise<number[]> {
   const result = await ai.embed({
@@ -329,90 +331,98 @@ export const searchManual = ai.defineTool(
     const db = getFirestore();
     console.log("[searchManual] Query params:", JSON.stringify(input));
 
-    // Push manufacturer filter to Firestore to avoid loading all embeddings
-    let embQuery: FirebaseFirestore.Query = db.collection("section_embeddings");
-    if (input.manufacturer) {
-      embQuery = embQuery.where("manufacturer", "==", input.manufacturer);
-    }
-
-    const embSnap = await embQuery.get();
-    const allEmbeddings = embSnap.docs.map(
-      (doc: QueryDocumentSnapshot) => doc.data() as SectionEmbedding
-    );
-
-    const useVectorSearch = allEmbeddings.length > 0 && !!input.keyword;
-    let candidates = useVectorSearch ? allEmbeddings : [];
-
-    if (useVectorSearch) {
-      // manufacturer already filtered server-side; only equipmentName needs client-side (substring match)
-      if (input.equipmentName) {
-        const term = input.equipmentName.toLowerCase();
-        candidates = candidates.filter((e) => e.equipmentName.toLowerCase().includes(term));
-      }
-    }
-
     type SectionResult = z.infer<typeof ManualSectionResultSchema>;
 
-    if (useVectorSearch && candidates.length > 0) {
+    // ── Native Firestore vector search via findNearest() ──
+    // Requires a composite vector index on section_embeddings:
+    //   gcloud firestore indexes composite create \
+    //     --collection-group=section_embeddings --query-scope=COLLECTION \
+    //     --field-config=order=ASCENDING,field-path="manufacturer" \
+    //     --field-config field-path=embedding,vector-config='{"dimension":"768","flat":"{}"}' \
+    //     --database="(default)"
+    if (input.keyword) {
       const queryText = [input.manufacturer, input.equipmentName, input.keyword]
         .filter(Boolean)
         .join(" ");
 
       const queryEmbedding = await embedQuery(queryText);
 
-      const scored = candidates.map((emb) => ({
-        emb,
-        score: cosineSimilarity(queryEmbedding, emb.embedding),
-      }));
+      // Pre-filter by manufacturer server-side, then findNearest
+      let baseQuery: FirebaseFirestore.Query = db.collection("section_embeddings");
+      if (input.manufacturer) {
+        baseQuery = baseQuery.where("manufacturer", "==", input.manufacturer);
+      }
 
-      scored.sort((a, b) => b.score - a.score);
+      const vectorQuery = baseQuery.findNearest({
+        vectorField: "embedding",
+        queryVector: FieldValue.vector(queryEmbedding),
+        limit: FIND_NEAREST_LIMIT,
+        distanceMeasure: "COSINE",
+        distanceResultField: "vector_distance",
+        distanceThreshold: DISTANCE_THRESHOLD,
+      });
 
-      const topResults = scored
-        .filter((s) => s.score >= SIMILARITY_THRESHOLD)
-        .slice(0, TOP_K);
+      const vectorSnap = await vectorQuery.get();
 
-      const results: SectionResult[] = topResults.map((s) => ({
-        manualId: s.emb.manualId,
-        manualTitle: s.emb.manualTitle,
-        sectionId: s.emb.sectionId,
-        sectionTitle: s.emb.sectionTitle,
-        content: s.emb.content,
-        specifications: s.emb.specifications,
-        warnings: s.emb.warnings,
-        steps: s.emb.steps,
-        tools: s.emb.tools,
+      // Post-filter by equipmentName (substring match, can't do server-side)
+      let docs = vectorSnap.docs;
+      if (input.equipmentName) {
+        const term = input.equipmentName.toLowerCase();
+        docs = docs.filter((doc) => {
+          const name = doc.get("equipmentName") as string;
+          return name && name.toLowerCase().includes(term);
+        });
+      }
+
+      const topDocs = docs.slice(0, TOP_K);
+
+      const results: SectionResult[] = topDocs.map((doc) => {
+        const data = doc.data() as SectionEmbedding;
+        return {
+          manualId: data.manualId,
+          manualTitle: data.manualTitle,
+          sectionId: data.sectionId,
+          sectionTitle: data.sectionTitle,
+          content: data.content,
+          specifications: data.specifications,
+          warnings: data.warnings,
+          steps: data.steps,
+          tools: data.tools,
+        };
+      });
+
+      // Build scores from distance field (cosine distance → similarity: 1 - distance)
+      const topScores = docs.slice(0, 8).map((doc) => ({
+        sectionTitle: (doc.get("sectionTitle") as string) || "",
+        score: parseFloat((1 - (doc.get("vector_distance") as number ?? 1)).toFixed(4)),
       }));
 
       const latencyMs = Date.now() - startTime;
       trace.getActiveSpan()?.setAttributes({
-        "tool.searchMode": "vector",
+        "tool.searchMode": "vector-native",
         "tool.resultCount": results.length,
-        "tool.embeddingsLoaded": allEmbeddings.length,
-        "tool.candidatesAfterFilter": candidates.length,
+        "tool.candidatesReturned": vectorSnap.size,
         "tool.latencyMs": latencyMs,
       });
-      console.log(`[searchManual] vector ${results.length} results (${latencyMs}ms)`);
+      console.log(`[searchManual] vector-native ${results.length} results from ${vectorSnap.size} candidates (${latencyMs}ms)`);
 
       const ragTrace: RAGTraceData = {
         searchMode: "vector",
-        embeddingsLoaded: allEmbeddings.length,
-        candidatesAfterFilter: candidates.length,
+        embeddingsLoaded: 0, // native search — no client-side loading
+        candidatesAfterFilter: docs.length,
         queryText,
-        topScores: scored.slice(0, 8).map((s) => ({
-          sectionTitle: s.emb.sectionTitle,
-          score: parseFloat(s.score.toFixed(4)),
-        })),
-        similarityThreshold: SIMILARITY_THRESHOLD,
-        resultsAboveThreshold: topResults.length,
+        topScores,
+        similarityThreshold: parseFloat((1 - DISTANCE_THRESHOLD).toFixed(2)),
+        resultsAboveThreshold: topDocs.length,
         topK: TOP_K,
       };
       getActiveCollector()?.recordToolCall("searchManual", input as Record<string, unknown>, results.length, latencyMs, undefined, ragTrace);
       return results;
     }
 
+    // ── Keyword fallback (no keyword provided → can't embed) ──
     console.log("[searchManual] Using keyword fallback search");
 
-    // Push manufacturer filter to Firestore to avoid loading all manuals
     let manualQuery: FirebaseFirestore.Query = db.collection("service_manuals");
     if (input.manufacturer) {
       manualQuery = manualQuery.where("manufacturer", "==", input.manufacturer);
@@ -436,35 +446,17 @@ export const searchManual = ai.defineTool(
 
     for (const manual of manuals) {
       for (const section of manual.sections) {
-        let matches = !input.keyword;
-
-        if (input.keyword) {
-          const kw = input.keyword.toLowerCase();
-          matches =
-            section.title.toLowerCase().includes(kw) ||
-            section.content.toLowerCase().includes(kw) ||
-            (section.steps?.some((s) => s.toLowerCase().includes(kw)) ?? false) ||
-            (section.specifications?.some(
-              (spec) =>
-                spec.parameter.toLowerCase().includes(kw) ||
-                spec.value.toLowerCase().includes(kw)
-            ) ?? false) ||
-            (section.warnings?.some((w) => w.toLowerCase().includes(kw)) ?? false);
-        }
-
-        if (matches) {
-          results.push({
-            manualId: manual.manualId,
-            manualTitle: manual.title,
-            sectionId: section.sectionId,
-            sectionTitle: section.title,
-            content: section.content,
-            specifications: section.specifications,
-            warnings: section.warnings,
-            steps: section.steps,
-            tools: section.tools,
-          });
-        }
+        results.push({
+          manualId: manual.manualId,
+          manualTitle: manual.title,
+          sectionId: section.sectionId,
+          sectionTitle: section.title,
+          content: section.content,
+          specifications: section.specifications,
+          warnings: section.warnings,
+          steps: section.steps,
+          tools: section.tools,
+        });
       }
     }
 
@@ -478,11 +470,11 @@ export const searchManual = ai.defineTool(
 
     const ragTrace: RAGTraceData = {
       searchMode: "keyword",
-      embeddingsLoaded: allEmbeddings.length,
+      embeddingsLoaded: 0,
       candidatesAfterFilter: 0,
-      queryText: input.keyword || "",
+      queryText: "",
       topScores: [],
-      similarityThreshold: SIMILARITY_THRESHOLD,
+      similarityThreshold: parseFloat((1 - DISTANCE_THRESHOLD).toFixed(2)),
       resultsAboveThreshold: 0,
       topK: TOP_K,
     };

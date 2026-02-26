@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { initializeApp } from "firebase-admin/app";
 import { onRequest } from "firebase-functions/v2/https";
 import { defineString } from "firebase-functions/params";
@@ -19,7 +20,7 @@ initializeApp();
 // Demo password (set via firebase functions:config or .env)
 // ---------------------------------------------------------------------------
 
-const DEMO_PASSWORD = defineString("DEMO_PASSWORD", { default: "" });
+const DEMO_PASSWORD = defineString("DEMO_PASSWORD", { default: "123" });
 
 function checkDemoAuth(req: { headers: Record<string, unknown> }, res: { status: (code: number) => { json: (body: object) => void } }): boolean {
   const password = DEMO_PASSWORD.value();
@@ -31,25 +32,37 @@ function checkDemoAuth(req: { headers: Record<string, unknown> }, res: { status:
 }
 
 // ---------------------------------------------------------------------------
-// Simple in-memory rate limiter (per Cloud Functions instance)
+// Distributed rate limiter (Firestore-backed, works across all instances)
 // ---------------------------------------------------------------------------
+// Configure a TTL policy on the "rate_limits" collection in the Firebase
+// console to auto-delete expired documents (field: "expiresAt", type: Date).
 
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 20; // max requests per IP per window
 
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+async function isRateLimited(ip: string): Promise<boolean> {
+  const db = getFirestore();
+  // Hash the IP for privacy; bucket by time window for automatic rotation
+  const ipHash = createHash("sha256").update(ip).digest("hex").slice(0, 16);
+  const windowKey = `${ipHash}_${Math.floor(Date.now() / RATE_LIMIT_WINDOW_MS)}`;
+  const ref = db.collection("rate_limits").doc(windowKey);
 
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-
-  if (!entry || now >= entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+  try {
+    const result = await db.runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      const count = (doc.data()?.count as number ?? 0) + 1;
+      tx.set(ref, {
+        count,
+        expiresAt: new Date(Date.now() + RATE_LIMIT_WINDOW_MS * 2),
+      }, { merge: true });
+      return count;
+    });
+    return result > RATE_LIMIT_MAX_REQUESTS;
+  } catch (err) {
+    // Fail open — don't block requests if Firestore is temporarily unavailable
+    console.warn("[rateLimit] Firestore check failed, allowing request:", err);
     return false;
   }
-
-  entry.count++;
-  return entry.count > RATE_LIMIT_MAX_REQUESTS;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +88,7 @@ export const chat = onRequest(
     if (!checkDemoAuth(req, res)) return;
 
     const clientIp = req.ip || "unknown";
-    if (isRateLimited(clientIp)) {
+    if (await isRateLimited(clientIp)) {
       res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
       return;
     }
