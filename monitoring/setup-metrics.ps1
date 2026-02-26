@@ -322,18 +322,17 @@ try {
 }
 
 if ($existing) {
-    Write-Host "  Dashboard already exists. Updating..."
+    Write-Host "  Dashboard already exists. Deleting and recreating..."
     $dashboardName = ($existing -split "`n")[0].Trim()
-    $tmpDash = [System.IO.Path]::GetTempFileName()
-    $dashboardJson | Out-File -FilePath $tmpDash -Encoding utf8
-    gcloud monitoring dashboards update $dashboardName --config-from-file=$tmpDash
-    Remove-Item $tmpDash -ErrorAction SilentlyContinue
-} else {
-    $tmpDash = [System.IO.Path]::GetTempFileName()
-    $dashboardJson | Out-File -FilePath $tmpDash -Encoding utf8
-    gcloud monitoring dashboards create --config-from-file=$tmpDash
-    Remove-Item $tmpDash -ErrorAction SilentlyContinue
+    # gcloud writes to stderr even on success; use cmd /c to avoid PowerShell treating it as an error
+    cmd /c "gcloud monitoring dashboards delete $dashboardName --quiet 2>&1" | Out-Null
+    Start-Sleep -Seconds 2
 }
+
+$tmpDash = [System.IO.Path]::GetTempFileName()
+$dashboardJson | Out-File -FilePath $tmpDash -Encoding utf8
+cmd /c "gcloud monitoring dashboards create --config-from-file=$tmpDash 2>&1"
+Remove-Item $tmpDash -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "Done! Dashboard available at:"
