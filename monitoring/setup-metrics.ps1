@@ -57,12 +57,23 @@ try {
 } catch { Write-Host "  agent_request_count already exists" }
 Remove-Item $tmpFile -ErrorAction SilentlyContinue
 
-# Metric: User feedback rating (distribution)
+# Metric: User feedback rating (distribution — extracts the actual star value)
+$metricFeedbackRating = @'
+{
+  "name": "user_feedback_rating",
+  "description": "User feedback star ratings distribution (1-5)",
+  "filter": "jsonPayload.message=\"user_feedback\"",
+  "metricDescriptor": { "metricKind": "DELTA", "valueType": "DISTRIBUTION" },
+  "valueExtractor": "EXTRACT(jsonPayload.feedback.rating)",
+  "bucketOptions": { "linearBuckets": { "numFiniteBuckets": 5, "width": 1, "offset": 0.5 } }
+}
+'@
+$tmpFile = [System.IO.Path]::GetTempFileName()
+$metricFeedbackRating | Out-File -FilePath $tmpFile -Encoding utf8
 try {
-    gcloud logging metrics create user_feedback_rating `
-        --description="User feedback star ratings (1-5)" `
-        --log-filter='jsonPayload.message="user_feedback"' 2>$null
+    gcloud logging metrics create user_feedback_rating --config-from-file=$tmpFile 2>$null
 } catch { Write-Host "  user_feedback_rating already exists" }
+Remove-Item $tmpFile -ErrorAction SilentlyContinue
 
 # Metric: User feedback count (counter by rating)
 $metricFeedbackCount = @'
