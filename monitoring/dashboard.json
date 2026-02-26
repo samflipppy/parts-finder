@@ -7,15 +7,15 @@
         "width": 6,
         "height": 4,
         "widget": {
-          "title": "User Feedback Ratings (1-5 Stars)",
+          "title": "Avg Star Rating",
           "scorecard": {
             "timeSeriesQuery": {
               "timeSeriesFilter": {
-                "filter": "metric.type=\"logging.googleapis.com/user/user_feedback_count\"",
+                "filter": "metric.type=\"logging.googleapis.com/user/user_feedback_rating\"",
                 "aggregation": {
                   "alignmentPeriod": "86400s",
-                  "perSeriesAligner": "ALIGN_SUM",
-                  "crossSeriesReducer": "REDUCE_SUM"
+                  "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                  "crossSeriesReducer": "REDUCE_MEAN"
                 }
               }
             }
@@ -218,11 +218,11 @@
         "width": 4,
         "height": 4,
         "widget": {
-          "title": "Total Tokens (24h)",
+          "title": "LLM Requests (24h)",
           "scorecard": {
             "timeSeriesQuery": {
               "timeSeriesFilter": {
-                "filter": "metric.type=\"logging.googleapis.com/user/agent_total_tokens\"",
+                "filter": "metric.type=\"logging.googleapis.com/user/agent_request_by_model\"",
                 "aggregation": {
                   "alignmentPeriod": "86400s",
                   "perSeriesAligner": "ALIGN_SUM",
@@ -246,7 +246,7 @@
                 "filter": "metric.type=\"logging.googleapis.com/user/agent_total_tokens\"",
                 "aggregation": {
                   "alignmentPeriod": "86400s",
-                  "perSeriesAligner": "ALIGN_MEAN",
+                  "perSeriesAligner": "ALIGN_PERCENTILE_50",
                   "crossSeriesReducer": "REDUCE_MEAN"
                 }
               }
@@ -260,15 +260,15 @@
         "width": 4,
         "height": 4,
         "widget": {
-          "title": "Estimated Cost (24h)",
+          "title": "Avg Cost / Request",
           "scorecard": {
             "timeSeriesQuery": {
               "timeSeriesFilter": {
                 "filter": "metric.type=\"logging.googleapis.com/user/agent_estimated_cost\"",
                 "aggregation": {
                   "alignmentPeriod": "86400s",
-                  "perSeriesAligner": "ALIGN_SUM",
-                  "crossSeriesReducer": "REDUCE_SUM"
+                  "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                  "crossSeriesReducer": "REDUCE_MEAN"
                 }
               }
             }
@@ -280,7 +280,7 @@
         "width": 6,
         "height": 8,
         "widget": {
-          "title": "Token Usage Over Time (Input vs Output)",
+          "title": "Tokens Per Request Over Time (Input vs Output)",
           "xyChart": {
             "dataSets": [
               {
@@ -289,13 +289,13 @@
                     "filter": "metric.type=\"logging.googleapis.com/user/agent_input_tokens\"",
                     "aggregation": {
                       "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_SUM",
-                      "crossSeriesReducer": "REDUCE_SUM"
+                      "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                      "crossSeriesReducer": "REDUCE_MEAN"
                     }
                   }
                 },
                 "plotType": "STACKED_BAR",
-                "legendTemplate": "Input Tokens"
+                "legendTemplate": "Input Tokens (median)"
               },
               {
                 "timeSeriesQuery": {
@@ -303,16 +303,16 @@
                     "filter": "metric.type=\"logging.googleapis.com/user/agent_output_tokens\"",
                     "aggregation": {
                       "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_SUM",
-                      "crossSeriesReducer": "REDUCE_SUM"
+                      "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                      "crossSeriesReducer": "REDUCE_MEAN"
                     }
                   }
                 },
                 "plotType": "STACKED_BAR",
-                "legendTemplate": "Output Tokens"
+                "legendTemplate": "Output Tokens (median)"
               }
             ],
-            "yAxis": { "label": "Tokens / hour" }
+            "yAxis": { "label": "Tokens / request" }
           }
         }
       },
@@ -322,7 +322,7 @@
         "width": 6,
         "height": 8,
         "widget": {
-          "title": "Estimated Cost Over Time",
+          "title": "Cost Per Request Over Time",
           "xyChart": {
             "dataSets": [
               {
@@ -331,8 +331,8 @@
                     "filter": "metric.type=\"logging.googleapis.com/user/agent_estimated_cost\"",
                     "aggregation": {
                       "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_SUM",
-                      "crossSeriesReducer": "REDUCE_SUM"
+                      "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                      "crossSeriesReducer": "REDUCE_MEAN"
                     }
                   }
                 },
@@ -340,7 +340,7 @@
                 "legendTemplate": "Cost (USD)"
               }
             ],
-            "yAxis": { "label": "Cost (USD) / hour" }
+            "yAxis": { "label": "Cost (USD) / request" }
           }
         }
       },
@@ -358,7 +358,7 @@
                     "filter": "metric.type=\"logging.googleapis.com/user/agent_input_tokens\"",
                     "aggregation": {
                       "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_MEAN",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_50",
                       "crossSeriesReducer": "REDUCE_MEAN"
                     }
                   }
@@ -372,7 +372,7 @@
                     "filter": "metric.type=\"logging.googleapis.com/user/agent_output_tokens\"",
                     "aggregation": {
                       "alignmentPeriod": "3600s",
-                      "perSeriesAligner": "ALIGN_MEAN",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_50",
                       "crossSeriesReducer": "REDUCE_MEAN"
                     }
                   }
