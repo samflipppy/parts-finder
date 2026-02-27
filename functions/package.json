@@ -10,7 +10,6 @@
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
     "deploy": "firebase deploy --only functions",
-    "eval": "tsc && node lib/eval.js",
     "test": "jest --forceExit",
     "lint": "eslint src/",
     "genkit": "npx genkit start -- npx tsx src/dev.ts"

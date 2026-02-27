@@ -28,18 +28,6 @@ describe("Tool output schemas must never allow raw null", () => {
     expect(result.success).toBe(true);
   });
 
-  it("listManualSections notFound response is valid (not null)", () => {
-    const response = { notFound: true as const, message: "No service manual found for Acme Widget" };
-    const result = NotFoundSchema.safeParse(response);
-    expect(result.success).toBe(true);
-  });
-
-  it("getManualSection notFound response is valid (not null)", () => {
-    const response = { notFound: true as const, message: "Section xyz not found in manual abc" };
-    const result = NotFoundSchema.safeParse(response);
-    expect(result.success).toBe(true);
-  });
-
   it("null is NOT a valid notFound response", () => {
     const result = NotFoundSchema.safeParse(null);
     expect(result.success).toBe(false);
@@ -167,13 +155,11 @@ describe("System prompt guardrails", () => {
     expect(SYSTEM_PROMPT).toContain('"manualReferences":[]');
   });
 
-  it("lists all 8 tools", () => {
+  it("lists all 6 tools", () => {
     const tools = [
       "lookupAsset",
       "getRepairHistory",
-      "listManualSections",
       "searchManual",
-      "getManualSection",
       "searchParts",
       "getSuppliers",
       "getRepairGuide",

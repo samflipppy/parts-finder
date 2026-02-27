@@ -15,25 +15,3 @@ export const ai = genkit({
 });
 
 export const tracer = trace.getTracer("parts-finder-agent");
-
-export async function generateWithRetry<T>(
-  fn: () => Promise<T>,
-  maxAttempts = 3
-): Promise<T> {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const isRateLimit = msg.includes("429") || msg.toLowerCase().includes("resource exhausted");
-      if (isRateLimit && attempt < maxAttempts) {
-        const delayMs = attempt * 15000;
-        console.warn(`[generateWithRetry] Rate limited (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw new Error("generateWithRetry: exhausted all attempts");
-}
